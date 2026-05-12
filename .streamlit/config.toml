@@ -1,0 +1,10 @@
+[theme]
+base = "light"
+primaryColor = "#2563EB"               # blue-600 — primary buttons, focus rings, active states
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F9FF"   # very light blue — sidebar / containers
+textColor = "#0F172A"                  # slate-900
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
