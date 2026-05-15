@@ -89,51 +89,40 @@ if "customer_id" not in st.session_state:
     st.session_state.customer_id = "demo-001"
 
 
+# ---------- customer (fetched once, shared across sidebar + main) ----------
+
+c = repo.get_customer(st.session_state.customer_id)
+
+
 # ---------- sidebar ----------
 
 with st.sidebar:
-    st.subheader("Demo controls")
-
-    customers = repo.list_customers()
-    selected = st.selectbox(
-        "Customer",
-        options=[c["id"] for c in customers],
-        index=[c["id"] for c in customers].index(st.session_state.customer_id),
-        format_func=lambda cid: next(
-            f"{c['first_name']} {c['last_name']} ({cid})" for c in customers if c["id"] == cid
-        ),
-    )
-    if selected != st.session_state.customer_id:
-        st.session_state.customer_id = selected
-        _new_session()
-        st.rerun()
-
-    if st.button("Reset conversation", use_container_width=True):
-        _new_session()
-        st.rerun()
-
+    st.markdown("### 🏦 RetireSafe")
+    st.caption("Secure Account Support")
     st.divider()
-    c = repo.get_customer(st.session_state.customer_id)
+
     if c:
-        st.caption("**Demo identity:**")
-        st.caption(f"DOB: `{c['dob']}`")
-        st.caption(f"SSN last-4: `{c['ssn_last4']}`")
-        st.caption("OTP: `123456`")
+        st.markdown(f"**{c['first_name']} {c['last_name']}**")
+        st.caption(f"Member ID · {st.session_state.customer_id}")
 
     st.divider()
-    st.caption("**Try saying:**")
-    st.caption("• Change my address")
-    st.caption("• What's my balance?")
-    st.caption("• Add a beneficiary")
-    st.caption("• Update my contribution")
-    st.caption("• Roll over my 401k")
+
+    if st.button("＋  New conversation", use_container_width=True):
+        _new_session()
+        st.rerun()
+
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    st.divider()
+    st.caption("🔒 Encrypted connection · TLS 1.3")
+    st.caption("Mon – Fri · 8 am – 8 pm ET")
+    st.caption("📞 1-800-555-7483")
 
 
 # ---------- main column ----------
 
-st.title("Retirement Account Support")
-c = repo.get_customer(st.session_state.customer_id)
-st.caption(f"Signed in as **{c['first_name']} {c['last_name']}**")
+st.title("Account Support")
+if c:
+    st.caption(f"Signed in as **{c['first_name']} {c['last_name']}**")
 
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -165,14 +154,14 @@ def _absorb_run(payload: Any, *, spinner_label: str = "Working...") -> None:
 def _archive_card_summary(card, submission: dict[str, Any]) -> None:
     """Append a short user-visible breadcrumb so submitted cards stay in the chat scroll."""
     if submission.get("_cancelled"):
-        st.session_state.history.append({"role": "system", "content": "_(cancelled)_"})
+        st.session_state.history.append({"role": "system", "content": "_Request cancelled._"})
         return
     if submission.get("_confirmed") or submission.get("_acknowledged"):
         return  # the success card itself is the summary; nothing extra needed
     if card.card_type == "identity_verification":
-        st.session_state.history.append({"role": "user", "content": "_(verified identity)_"})
+        st.session_state.history.append({"role": "system", "content": "_Identity verified._"})
     elif card.card_type == "otp":
-        st.session_state.history.append({"role": "user", "content": "_(submitted verification code)_"})
+        st.session_state.history.append({"role": "system", "content": "_Verification code submitted._"})
     elif card.card_type == "address_form":
         addr = submission
         st.session_state.history.append({
@@ -211,7 +200,7 @@ def _archive_terminal_card(card) -> None:
     elif card.card_type == "not_implemented":
         st.session_state.history.append({
             "role": "assistant",
-            "content": f"Acknowledged — **{card.intent}** isn't implemented in this prototype.",
+            "content": f"**{card.intent}** is not available through self-service at this time.",
         })
 
 

@@ -97,7 +97,6 @@ def _render_otp(card: OtpCard, key: str) -> dict[str, Any] | None:
         with st.container(border=True):
             _card_header(card)
             st.write(card.delivery_hint)
-            st.caption("(Demo: any value works as long as the code is `123456`.)")
             with st.form(key, clear_on_submit=False):
                 code = st.text_input("6-digit code", max_chars=6)
                 col1, col2 = st.columns([1, 1])
@@ -340,9 +339,8 @@ def _render_not_implemented(card: NotImplementedCard, key: str) -> dict[str, Any
         with st.container(border=True):
             _card_header(card)
             st.warning(
-                f"**{card.intent}** is registered in the intent catalog but the form for it "
-                "isn't built in this prototype. In a real product this is where the agent would "
-                "render the matching workflow."
+                f"**{card.intent}** is not currently available through self-service. "
+                "Please call us at 1-800-555-7483 or visit your nearest branch for assistance."
             )
             if card.next_steps:
                 st.write("**Typical steps for this transaction:**")
