@@ -335,79 +335,17 @@ def test_back_to_back_flows_same_thread():
     assert snap.values["pending_card"].card_type == "identity_verification"
 
 
-# ------------------------------------------------------------------
-# Helpers for mocking the Azure AI Foundry OpenAI client
-# ------------------------------------------------------------------
-
-def _fake_text_client(content: str):
-    """Return a mock OpenAI client whose chat.completions.create() returns a plain text response."""
-    import json
-    from types import SimpleNamespace
-
-    completion = SimpleNamespace(
-        choices=[SimpleNamespace(
-            finish_reason="stop",
-            message=SimpleNamespace(content=content, tool_calls=[]),
-        )]
-    )
-
-    class _FakeCompletions:
-        def create(self, **_kwargs):
-            return completion
-
-    class _FakeChat:
-        completions = _FakeCompletions()
-
-    class _FakeClient:
-        chat = _FakeChat()
-
-    return _FakeClient()
-
-
-def _fake_tool_client(intent_id: str, brief_reason: str, tool_call_id: str = "call_test"):
-    """Return a mock OpenAI client whose chat.completions.create() returns a tool call response."""
-    import json
-    from types import SimpleNamespace
-
-    tool_call = SimpleNamespace(
-        id=tool_call_id,
-        type="function",
-        function=SimpleNamespace(
-            name="start_workflow",
-            arguments=json.dumps({"intent_id": intent_id, "brief_reason": brief_reason}),
-        ),
-    )
-    completion = SimpleNamespace(
-        choices=[SimpleNamespace(
-            finish_reason="tool_calls",
-            message=SimpleNamespace(content="", tool_calls=[tool_call]),
-        )]
-    )
-
-    class _FakeCompletions:
-        def create(self, **_kwargs):
-            return completion
-
-    class _FakeChat:
-        completions = _FakeCompletions()
-
-    class _FakeClient:
-        chat = _FakeChat()
-
-    return _FakeClient()
-
-
-# ------------------------------------------------------------------
-
-
 def test_agent_node_text_reply_for_greeting(monkeypatch):
     """Casual greetings get a conversational reply, not a card."""
+    from langchain_core.messages import AIMessage
     from agents import nodes
 
-    reply = "Hi! I'm here to help with your retirement account. What can I do for you today?"
-    monkeypatch.setattr(nodes, "_get_openai_client", lambda: _fake_text_client(reply))
-    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "https://fake.services.ai.azure.com/api/projects/proj")
-    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-4o")
+    class _FakeLLM:
+        def invoke(self, _msgs):
+            return AIMessage(content="Hi! I'm here to help with your retirement account. What can I do for you today?")
+
+    monkeypatch.setattr(nodes, "_get_agent_llm", lambda: _FakeLLM())
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://fake.openai.azure.com/")
 
     repo = Repository(get_db())
     g = build_graph(repo)
@@ -433,14 +371,21 @@ def test_agent_node_text_reply_for_greeting(monkeypatch):
 
 def test_agent_node_tool_call_routes_to_workflow(monkeypatch):
     """Agent emitting a start_workflow tool call kicks off the workflow loop."""
+    from langchain_core.messages import AIMessage
     from agents import nodes
 
-    monkeypatch.setattr(
-        nodes, "_get_openai_client",
-        lambda: _fake_tool_client("change_name", "I'll get your legal name updated on file.", "call_123"),
-    )
-    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "https://fake.services.ai.azure.com/api/projects/proj")
-    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-4o")
+    class _FakeLLM:
+        def invoke(self, _msgs):
+            msg = AIMessage(content="I'll get your legal name updated on file.")
+            msg.tool_calls = [{
+                "name": "start_workflow",
+                "args": {"intent_id": "change_name", "brief_reason": "I'll get your legal name updated on file."},
+                "id": "call_123",
+            }]
+            return msg
+
+    monkeypatch.setattr(nodes, "_get_agent_llm", lambda: _FakeLLM())
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://fake.openai.azure.com/")
 
     repo = Repository(get_db())
     g = build_graph(repo)
@@ -468,14 +413,21 @@ def test_agent_node_tool_call_routes_to_workflow(monkeypatch):
 
 def test_agent_node_unknown_intent_falls_back(monkeypatch):
     """If the LLM hallucinates an unknown intent, we apologize and end the turn."""
+    from langchain_core.messages import AIMessage
     from agents import nodes
 
-    monkeypatch.setattr(
-        nodes, "_get_openai_client",
-        lambda: _fake_tool_client("buy_lottery_tickets", "", "call_xyz"),
-    )
-    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "https://fake.services.ai.azure.com/api/projects/proj")
-    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-4o")
+    class _FakeLLM:
+        def invoke(self, _msgs):
+            msg = AIMessage(content="")
+            msg.tool_calls = [{
+                "name": "start_workflow",
+                "args": {"intent_id": "buy_lottery_tickets", "brief_reason": ""},
+                "id": "call_xyz",
+            }]
+            return msg
+
+    monkeypatch.setattr(nodes, "_get_agent_llm", lambda: _FakeLLM())
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://fake.openai.azure.com/")
 
     repo = Repository(get_db())
     g = build_graph(repo)

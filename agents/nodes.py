@@ -6,21 +6,20 @@ The graph:
                                                                               ─→ persist_step
                                                                               ─→ END (with success card)
 
-`agent_node` is the conversational entry point. It uses the Azure AI Foundry
-OpenAI client (via DefaultAzureCredential — no API key required) with a single
-`start_workflow` function tool. For unambiguous transaction phrasings the
-agent_node short-circuits via a regex prefilter, skipping the LLM entirely.
-Everything from `plan_steps` onward is unchanged.
+`agent_node` is the conversational entry point: AzureChatOpenAI (via
+langchain-openai) bound with a single `start_workflow` tool. For unambiguous
+transaction phrasings the agent_node short-circuits via a regex prefilter,
+skipping the LLM entirely. Everything from `plan_steps` onward is unchanged.
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
 from typing import Any, Optional
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 load_dotenv()
@@ -37,66 +36,45 @@ from agents.state import AgentState
 from db.repository import Repository
 
 
-# ---------- start_workflow tool definition (OpenAI function schema) ----------
+# ---------- the one tool the agent has ----------
 
-START_WORKFLOW_TOOL: dict = {
-    "type": "function",
-    "function": {
-        "name": "start_workflow",
-        "description": (
-            "Begin a structured retirement-account workflow. "
-            "Use this when the user wants to perform a specific transaction "
-            "(change address, add beneficiary, check balance, etc.). "
-            "Do NOT use it for greetings, off-topic questions, or when the "
-            "user is still figuring out what they want."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "intent_id": {
-                    "type": "string",
-                    "description": (
-                        "The registered intent id. Must be exactly one of: "
-                        + ", ".join(INTENT_PLANS.keys())
-                    ),
-                },
-                "brief_reason": {
-                    "type": "string",
-                    "description": (
-                        "One short, warm sentence shown to the user, e.g. "
-                        "'I'll get you set up to update your address.'"
-                    ),
-                },
-            },
-            "required": ["intent_id", "brief_reason"],
-        },
-    },
-}
+@tool
+def start_workflow(intent_id: str, brief_reason: str) -> str:
+    """Begin a structured retirement-account workflow.
 
+    Use this when the user wants to perform a specific transaction
+    (change address, add beneficiary, check balance, etc.).
+    Do NOT use it for greetings, off-topic questions, or when the
+    user is still figuring out what they want.
 
-# ---------- Azure AI Foundry OpenAI client ----------
-
-_openai_client_singleton: Optional[Any] = None
-
-
-def _get_openai_client():
-    """Lazy-build the OpenAI client from the Azure AI Foundry project.
-
-    Uses DefaultAzureCredential — no API key required. Authenticates via
-    Azure CLI, managed identity, workload identity, or env-var service principal
-    (whichever is available in the current environment).
+    Args:
+        intent_id: One of the registered intent ids (e.g. "change_address",
+            "check_balance", "add_beneficiary"). Must match the catalog exactly.
+        brief_reason: One short, warm sentence shown to the user as the agent's
+            framing for the workflow, e.g. "I'll get you set up to update your address."
     """
-    global _openai_client_singleton
-    if _openai_client_singleton is not None:
-        return _openai_client_singleton
-    from azure.ai.projects import AIProjectClient
-    from azure.identity import DefaultAzureCredential
-    project = AIProjectClient(
-        endpoint=os.environ["AZURE_FOUNDRY_ENDPOINT"],
-        credential=DefaultAzureCredential(),
+    return f"workflow_started:{intent_id}"
+
+
+# ---------- agent LLM (AzureChatOpenAI via langchain-openai) ----------
+
+_agent_llm_singleton: Optional[Any] = None
+
+
+def _get_agent_llm():
+    """Lazy-build AzureChatOpenAI bound with the start_workflow tool."""
+    global _agent_llm_singleton
+    if _agent_llm_singleton is not None:
+        return _agent_llm_singleton
+    from langchain_openai import AzureChatOpenAI
+    llm = AzureChatOpenAI(
+        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+        azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+        openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+        temperature=0.3,
     )
-    _openai_client_singleton = project.get_openai_client()
-    return _openai_client_singleton
+    _agent_llm_singleton = llm.bind_tools([start_workflow])
+    return _agent_llm_singleton
 
 
 # ---------- helpers ----------
@@ -111,26 +89,21 @@ def _last_user_text(messages: list) -> str:
     return ""
 
 
-def _to_openai_dicts(messages: list) -> list[dict]:
-    """Convert state messages (mix of dicts and BaseMessages) to plain OpenAI API dicts."""
-    out: list[dict] = []
+def _coerce_messages(messages: list) -> list[BaseMessage]:
+    """Convert mixed dicts and BaseMessages into BaseMessage objects for LLM input."""
+    out: list[BaseMessage] = []
     for m in messages or []:
-        if isinstance(m, HumanMessage):
-            out.append({"role": "user", "content": m.content or ""})
-        elif isinstance(m, AIMessage):
-            d: dict = {"role": "assistant", "content": m.content or ""}
-            tc = m.additional_kwargs.get("tool_calls")
-            if tc:
-                d["tool_calls"] = tc
-            out.append(d)
-        elif isinstance(m, ToolMessage):
-            out.append({"role": "tool", "content": m.content or "", "tool_call_id": m.tool_call_id})
-        elif isinstance(m, SystemMessage):
-            out.append({"role": "system", "content": m.content or ""})
+        if isinstance(m, BaseMessage):
+            out.append(m)
         elif isinstance(m, dict):
             role = m.get("role")
-            if role in ("user", "assistant", "system", "tool"):
-                out.append({"role": role, "content": m.get("content", "")})
+            content = m.get("content", "")
+            if role == "user":
+                out.append(HumanMessage(content=content))
+            elif role == "assistant":
+                out.append(AIMessage(content=content))
+            elif role == "system":
+                out.append(SystemMessage(content=content))
     return out
 
 
@@ -165,24 +138,18 @@ def agent_node(state: AgentState) -> dict[str, Any]:
             "routing_announcement": _announcement(fast, "regex", 1.0),
         }
 
-    # ----- Tier 2: Azure AI Foundry OpenAI client -----
-    if not os.environ.get("AZURE_FOUNDRY_ENDPOINT"):
+    # ----- Tier 2: AzureChatOpenAI.bind_tools([start_workflow]) -----
+    if not os.environ.get("AZURE_OPENAI_ENDPOINT"):
         msg = AIMessage(content=(
             "I can help with retirement-account tasks like checking balance, changing "
             "address, or adding a beneficiary. What would you like to do?"
         ))
         return {"messages": [msg], "final_message": msg.content}
 
-    api_messages = [{"role": "system", "content": AGENT_SYSTEM_PROMPT}] + _to_openai_dicts(msgs)
+    chat_input: list[BaseMessage] = [SystemMessage(content=AGENT_SYSTEM_PROMPT)] + _coerce_messages(msgs)
 
     try:
-        completion = _get_openai_client().chat.completions.create(
-            model=os.environ["AZURE_MODEL_DEPLOYMENT"],
-            messages=api_messages,
-            tools=[START_WORKFLOW_TOOL],
-            tool_choice="auto",
-            temperature=0.3,
-        )
+        response: AIMessage = _get_agent_llm().invoke(chat_input)
     except Exception as e:
         print(f"[agent_node] LLM call failed: {type(e).__name__}: {e}", file=sys.stderr)
         msg = AIMessage(content="Sorry, I'm having trouble connecting right now. Please try again.")
@@ -192,42 +159,28 @@ def agent_node(state: AgentState) -> dict[str, Any]:
             "last_error": f"{type(e).__name__}: {e}",
         }
 
-    choice = completion.choices[0]
-    raw_msg = choice.message
-
     # ----- Tool call branch -----
-    if choice.finish_reason == "tool_calls" and raw_msg.tool_calls:
-        call = raw_msg.tool_calls[0]
-        try:
-            args = json.loads(call.function.arguments)
-        except (json.JSONDecodeError, AttributeError):
-            args = {}
+    tool_calls = getattr(response, "tool_calls", None) or []
+    if tool_calls:
+        call = tool_calls[0]
+        args = call.get("args", {}) or {}
         intent_id = args.get("intent_id", "")
         reason = args.get("brief_reason", "") or ""
-        tool_call_id = call.id
-
-        # Store the assistant turn with its tool_calls metadata for future context.
-        ai_msg = AIMessage(
-            content=raw_msg.content or "",
-            additional_kwargs={"tool_calls": [
-                {"id": call.id, "type": "function",
-                 "function": {"name": call.function.name, "arguments": call.function.arguments}}
-            ]},
-        )
+        tool_call_id = call.get("id", "")
 
         if intent_id not in INTENT_PLANS:
-            tool_err = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
+            tool_msg = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
             apology = AIMessage(content=(
                 "Hmm, I'm not sure how to do that. Could you tell me a bit more about what you'd like to update?"
             ))
             return {
-                "messages": [ai_msg, tool_err, apology],
+                "messages": [response, tool_msg, apology],
                 "final_message": apology.content,
             }
 
         tool_msg = ToolMessage(content=f"workflow_started:{intent_id}", tool_call_id=tool_call_id)
         return {
-            "messages": [ai_msg, tool_msg],
+            "messages": [response, tool_msg],
             "intent": intent_id,
             "intent_confidence": None,
             "routed_via": "agent",
@@ -235,10 +188,9 @@ def agent_node(state: AgentState) -> dict[str, Any]:
         }
 
     # ----- Plain text reply branch -----
-    ai_msg = AIMessage(content=raw_msg.content or "")
     return {
-        "messages": [ai_msg],
-        "final_message": ai_msg.content,
+        "messages": [response],
+        "final_message": response.content,
     }
 
 
