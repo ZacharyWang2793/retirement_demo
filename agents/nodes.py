@@ -56,21 +56,19 @@ def start_workflow(intent_id: str, brief_reason: str) -> str:
     return f"workflow_started:{intent_id}"
 
 
-# ---------- agent LLM (AzureChatOpenAI via langchain-openai) ----------
+# ---------- agent LLM (ChatOpenAI via langchain-openai) ----------
 
 _agent_llm_singleton: Optional[Any] = None
 
 
 def _get_agent_llm():
-    """Lazy-build AzureChatOpenAI bound with the start_workflow tool."""
+    """Lazy-build ChatOpenAI bound with the start_workflow tool."""
     global _agent_llm_singleton
     if _agent_llm_singleton is not None:
         return _agent_llm_singleton
-    from langchain_openai import AzureChatOpenAI
-    llm = AzureChatOpenAI(
-        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-        azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-        openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+    from langchain_openai import ChatOpenAI
+    llm = ChatOpenAI(
+        model=os.environ.get("MODEL", "gpt-4o"),
         temperature=0.3,
     )
     _agent_llm_singleton = llm.bind_tools([start_workflow])
@@ -138,8 +136,8 @@ def agent_node(state: AgentState) -> dict[str, Any]:
             "routing_announcement": _announcement(fast, "regex", 1.0),
         }
 
-    # ----- Tier 2: AzureChatOpenAI.bind_tools([start_workflow]) -----
-    if not os.environ.get("AZURE_OPENAI_ENDPOINT"):
+    # ----- Tier 2: ChatOpenAI.bind_tools([start_workflow]) -----
+    if not os.environ.get("OPENAI_API_KEY"):
         msg = AIMessage(content=(
             "I can help with retirement-account tasks like checking balance, changing "
             "address, or adding a beneficiary. What would you like to do?"
