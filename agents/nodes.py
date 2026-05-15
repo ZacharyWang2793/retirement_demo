@@ -68,7 +68,7 @@ def _get_agent_llm():
         return _agent_llm_singleton
     from langchain_openai import ChatOpenAI
     llm = ChatOpenAI(
-        model=os.environ.get("MODEL", "gpt-4.1-mini"),
+        model=os.environ.get("MODEL", "gpt-5.4-nano"),
         temperature=0.3,
     )
     _agent_llm_singleton = llm.bind_tools([start_workflow])
