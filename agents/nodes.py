@@ -80,22 +80,15 @@ _openai_client_singleton: Optional[Any] = None
 
 
 def _get_openai_client():
-    """Lazy-build the OpenAI client from the Azure AI Foundry project.
-
-    Uses DefaultAzureCredential — no API key required. Authenticates via
-    Azure CLI, managed identity, workload identity, or env-var service principal
-    (whichever is available in the current environment).
-    """
+    """Lazy-build an OpenAI client pointed at the Azure AI Foundry endpoint."""
     global _openai_client_singleton
     if _openai_client_singleton is not None:
         return _openai_client_singleton
-    from azure.ai.projects import AIProjectClient
-    from azure.identity import DefaultAzureCredential
-    project = AIProjectClient(
-        endpoint=os.environ["AZURE_FOUNDRY_ENDPOINT"],
-        credential=DefaultAzureCredential(),
+    from openai import OpenAI
+    _openai_client_singleton = OpenAI(
+        base_url=os.environ["AZURE_OPENAI_BASE_URL"],
+        api_key=os.environ["AZURE_OPENAI_API_KEY"],
     )
-    _openai_client_singleton = project.get_openai_client()
     return _openai_client_singleton
 
 
@@ -166,7 +159,7 @@ def agent_node(state: AgentState) -> dict[str, Any]:
         }
 
     # ----- Tier 2: Azure AI Foundry OpenAI client -----
-    if not os.environ.get("AZURE_FOUNDRY_ENDPOINT"):
+    if not os.environ.get("AZURE_OPENAI_API_KEY"):
         msg = AIMessage(content=(
             "I can help with retirement-account tasks like checking balance, changing "
             "address, or adding a beneficiary. What would you like to do?"

@@ -406,8 +406,9 @@ def test_agent_node_text_reply_for_greeting(monkeypatch):
 
     reply = "Hi! I'm here to help with your retirement account. What can I do for you today?"
     monkeypatch.setattr(nodes, "_get_openai_client", lambda: _fake_text_client(reply))
-    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "https://fake.services.ai.azure.com/api/projects/proj")
-    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-4o")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-key")
+    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://fake.services.ai.azure.com/openai/v1")
+    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-5.4-nano")
 
     repo = Repository(get_db())
     g = build_graph(repo)
@@ -439,8 +440,9 @@ def test_agent_node_tool_call_routes_to_workflow(monkeypatch):
         nodes, "_get_openai_client",
         lambda: _fake_tool_client("change_name", "I'll get your legal name updated on file.", "call_123"),
     )
-    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "https://fake.services.ai.azure.com/api/projects/proj")
-    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-4o")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-key")
+    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://fake.services.ai.azure.com/openai/v1")
+    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-5.4-nano")
 
     repo = Repository(get_db())
     g = build_graph(repo)
@@ -474,8 +476,9 @@ def test_agent_node_unknown_intent_falls_back(monkeypatch):
         nodes, "_get_openai_client",
         lambda: _fake_tool_client("buy_lottery_tickets", "", "call_xyz"),
     )
-    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "https://fake.services.ai.azure.com/api/projects/proj")
-    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-4o")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "fake-key")
+    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://fake.services.ai.azure.com/openai/v1")
+    monkeypatch.setenv("AZURE_MODEL_DEPLOYMENT", "gpt-5.4-nano")
 
     repo = Repository(get_db())
     g = build_graph(repo)
