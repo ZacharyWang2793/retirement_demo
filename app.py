@@ -4,12 +4,14 @@ Bridges Streamlit's per-rerun loop with LangGraph's interrupt/resume model:
 - @st.cache_resource keeps the compiled graph alive across reruns
 - thread_id stays stable in session_state
 - The graph is the source of truth for orchestration state; session_state holds only the chat history.
+- Past conversations live in `st.session_state.conversations` so the sidebar can list them.
 """
 from __future__ import annotations
 
 import html
 import os
 import uuid
+from datetime import datetime
 from typing import Any
 
 import streamlit as st
@@ -54,81 +56,193 @@ graph = _graph()
 
 # ---------- session state ----------
 
-def _new_session() -> None:
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def _conv_title(history: list[dict[str, Any]]) -> str:
+    """Derive a short label from a conversation's first user turn."""
+    for m in history:
+        if m.get("role") == "user":
+            txt = (m.get("content") or "").strip()
+            if txt:
+                return txt[:36] + ("…" if len(txt) > 36 else "")
+    return "New conversation"
+
+
+def _archive_current_conversation() -> None:
+    """Snapshot the active thread into the conversations list (if it has any history)."""
+    history = st.session_state.get("history") or []
+    if not history:
+        return
+    tid = st.session_state.thread_id
+    convs = st.session_state.conversations
+    record = {
+        "thread_id": tid,
+        "title": _conv_title(history),
+        "started_at": st.session_state.get("started_at") or _now_iso(),
+        "last_at": _now_iso(),
+        "history": list(history),
+    }
+    # If this thread was already archived earlier, replace; else append.
+    for i, c in enumerate(convs):
+        if c["thread_id"] == tid:
+            convs[i] = record
+            return
+    convs.append(record)
+
+
+def _new_session(persist: bool = True) -> None:
+    """Start a fresh conversation. By default archive the current one first."""
+    if persist:
+        _archive_current_conversation()
     st.session_state.thread_id = str(uuid.uuid4())
     st.session_state.history = []
+    st.session_state.started_at = _now_iso()
     st.session_state.pending_prompt = None
 
 
+def _switch_to_conversation(thread_id: str) -> None:
+    """Make `thread_id` the active conversation, archiving the current one."""
+    if thread_id == st.session_state.thread_id:
+        return
+    _archive_current_conversation()
+    target = next((c for c in st.session_state.conversations if c["thread_id"] == thread_id), None)
+    if target is None:
+        return
+    st.session_state.thread_id = target["thread_id"]
+    st.session_state.history = list(target["history"])
+    st.session_state.started_at = target["started_at"]
+    st.session_state.pending_prompt = None
+    # Remove the now-active conversation from the archived list (it'll be re-archived on next switch).
+    st.session_state.conversations = [
+        c for c in st.session_state.conversations if c["thread_id"] != thread_id
+    ]
+
+
+if "conversations" not in st.session_state:
+    st.session_state.conversations = []
 if "thread_id" not in st.session_state:
-    _new_session()
+    _new_session(persist=False)
 if "customer_id" not in st.session_state:
     st.session_state.customer_id = "demo-001"
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
+if "started_at" not in st.session_state:
+    st.session_state.started_at = _now_iso()
 
 
-# ---------- customer (fetched once, shared across sidebar + main) ----------
+# ---------- customer + account snapshot ----------
 
 c = repo.get_customer(st.session_state.customer_id)
+balance = repo.get_balance_summary(st.session_state.customer_id) if c else None
 
 
 # ---------- sidebar ----------
 
 with st.sidebar:
+    # Brand
     st.markdown(
         f"""
         <div class="rs-brand-mark">
           <span class="rs-brand-logo">{icon_html("savings", size=22)}</span>
           <div>
             <div class="rs-brand-name">RetireSafe</div>
-            <div class="rs-brand-tag">Secure Account Support</div>
+            <div class="rs-brand-tag">Secure account support</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    # Profile pill (avatar + name + member id)
     if c:
         initial = (c["first_name"][:1] or "?").upper()
         st.markdown(
             f"""
-            <div class="rs-cust-card">
-              <div class="rs-cust-avatar">{html.escape(initial)}</div>
+            <div class="rs-profile-pill">
+              <span class="rs-profile-avatar">{html.escape(initial)}</span>
               <div>
-                <div class="rs-cust-name">{html.escape(c["first_name"])} {html.escape(c["last_name"])}</div>
-                <div class="rs-cust-id">Member · {html.escape(st.session_state.customer_id)}</div>
-                <div class="rs-cust-lastlogin">Last sign-in · 2 hours ago</div>
+                <div class="rs-profile-name">{html.escape(c["first_name"])} {html.escape(c["last_name"])}</div>
+                <div class="rs-profile-id">Member · {html.escape(st.session_state.customer_id)}</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    if st.button("New conversation", use_container_width=True):
-        _new_session()
+    # Account snapshot
+    if balance:
+        acct_count = len(balance["accounts"])
+        primary_type = balance["accounts"][0]["type"] if balance["accounts"] else ""
+        st.markdown(
+            f"""
+            <div class="rs-snap-card">
+              <div class="rs-snap-label">Total balance</div>
+              <div class="rs-snap-metric">${balance["total_balance"]:,.0f}</div>
+              <div class="rs-snap-sub">${balance["vested_balance"]:,.0f} vested · {acct_count} account{"s" if acct_count != 1 else ""}</div>
+              <div class="rs-snap-pills">
+                <span class="rs-snap-pill">{html.escape(primary_type) if primary_type else "active"}</span>
+                <span class="rs-snap-pill alt">TLS 1.3</span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # New conversation button
+    if st.button("＋  New conversation", use_container_width=True, type="primary", key="new-conv"):
+        _new_session(persist=True)
         st.rerun()
 
-    st.markdown('<div class="rs-section-label">Quick actions</div>', unsafe_allow_html=True)
-    quick_actions = [
-        ("Check balance", "What's my balance?"),
-        ("Recent transactions", "Show my recent transactions"),
-        ("Update address", "I want to change my address"),
-        ("Add beneficiary", "Add a beneficiary"),
-        ("Request status", "What's the status of my requests?"),
-    ]
-    for label, prompt in quick_actions:
-        if st.button(label, key=f"qa-side-{label}", use_container_width=True):
-            st.session_state.pending_prompt = prompt
-            st.rerun()
+    # Conversation history
+    st.markdown('<div class="rs-section-label">Conversations</div>', unsafe_allow_html=True)
+    current_history = st.session_state.get("history") or []
+    convs = list(st.session_state.conversations)
+    # Include the current conversation as the top entry (if it has any user message), highlighted.
+    current_entry = None
+    if current_history:
+        current_entry = {
+            "thread_id": st.session_state.thread_id,
+            "title": _conv_title(current_history),
+            "started_at": st.session_state.started_at,
+            "last_at": _now_iso(),
+        }
 
+    st.markdown('<div class="rs-conv-list">', unsafe_allow_html=True)
+    if current_entry:
+        st.caption(f"Now · {html.escape(current_entry['title'])}")
+    if not convs and not current_entry:
+        st.markdown(
+            '<div class="rs-conv-empty">No past conversations yet. Start by asking a question below.</div>',
+            unsafe_allow_html=True,
+        )
+    # Most-recent first
+    for conv in reversed(convs):
+        label = conv["title"]
+        # Friendly time
+        try:
+            ts = datetime.fromisoformat(conv["last_at"].replace("Z", ""))
+            time_label = ts.strftime("%b %-d · %-I:%M %p")
+        except Exception:
+            time_label = conv["last_at"][:16].replace("T", " ")
+        if st.button(
+            f"{label}\n{time_label}",
+            key=f"conv-{conv['thread_id']}",
+            use_container_width=True,
+        ):
+            _switch_to_conversation(conv["thread_id"])
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Contact + security
     st.markdown('<div class="rs-section-label">Need help?</div>', unsafe_allow_html=True)
     st.markdown(
         f"""
         <div class="rs-contact-card">
           <div class="rs-contact-line">{icon_html("call", size=16)} 1-800-555-7483</div>
           <div class="rs-contact-line">{icon_html("schedule", size=16)} Mon – Fri · 8 am – 8 pm ET</div>
-          <div class="rs-security-badge">{icon_html("lock", size=14)} Encrypted · TLS 1.3</div>
+          <span class="rs-security-badge">{icon_html("lock", size=12)} Encrypted · TLS 1.3</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -138,11 +252,25 @@ with st.sidebar:
         st.toast("Signed out (mock).", icon="🔒")
 
 
-# ---------- main column ----------
+# ---------- main column header ----------
 
-st.title("Account support")
 if c:
-    st.caption(f"Signed in as **{c['first_name']} {c['last_name']}**")
+    initial_main = (c["first_name"][:1] or "?").upper()
+    st.markdown(
+        f"""
+        <div class="rs-header-row">
+          <h1 style="margin:0;">Account support</h1>
+          <div class="rs-header-pill">
+            <span class="rs-pill-avatar">{html.escape(initial_main)}</span>
+            <span class="rs-pill-name">{html.escape(c["first_name"])} {html.escape(c["last_name"])}</span>
+            {icon_html("expand_more", size=16)}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.title("Account support")
 
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -439,7 +567,7 @@ st.markdown(
 
 # ---------- chat input ----------
 
-# Resolve any quick-action pending prompt set by sidebar or chip row.
+# Resolve any quick-action pending prompt set by the empty-state chip row.
 if st.session_state.pending_prompt:
     prompt = st.session_state.pending_prompt
     st.session_state.pending_prompt = None

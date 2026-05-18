@@ -4,6 +4,9 @@ Called once per session from app.py right after st.set_page_config.
 Defines brand tokens as CSS variables and applies them to Streamlit's default
 DOM. Streamlit class names drift between versions, so selectors aim at multiple
 test-id variants where it matters (chat avatars, banners).
+
+Aesthetic: dark sidebar (charcoal), white main surface, pastel-tinted account
+cards and chips — inspired by the dashboard reference.
 """
 from __future__ import annotations
 
@@ -21,22 +24,49 @@ _CSS = """
   --rs-ink: #0F172A; --rs-ink-2: #475569; --rs-ink-3: #94A3B8;
   --rs-surface: #FFFFFF; --rs-surface-2: #F8FAFC; --rs-surface-3: #F1F5F9;
   --rs-border: #E2E8F0; --rs-border-strong: #CBD5E1;
-  --rs-radius: 12px; --rs-radius-sm: 8px;
+  --rs-radius: 16px; --rs-radius-sm: 10px; --rs-radius-pill: 9999px;
   --rs-shadow: 0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.06);
-  --rs-shadow-lg: 0 4px 12px rgba(15,23,42,.06), 0 2px 6px rgba(15,23,42,.04);
+  --rs-shadow-lg: 0 8px 24px rgba(15,23,42,.06), 0 2px 8px rgba(15,23,42,.04);
+
+  /* Dark sidebar palette */
+  --rs-dark: #0B1220; --rs-dark-2: #131C2E; --rs-dark-3: #1E293B;
+  --rs-dark-ink: #F1F5F9; --rs-dark-ink-2: #94A3B8; --rs-dark-ink-3: #64748B;
+  --rs-dark-border: #1E293B;
+
+  /* Pastel surfaces for asset/account cards */
+  --rs-pastel-violet: #F3E8FF; --rs-pastel-violet-ink: #6D28D9;
+  --rs-pastel-mint:   #D1FAE5; --rs-pastel-mint-ink:   #047857;
+  --rs-pastel-peach:  #FFEDD5; --rs-pastel-peach-ink:  #C2410C;
+  --rs-pastel-cream:  #FEF3C7; --rs-pastel-cream-ink:  #92400E;
+  --rs-pastel-sky:    #DBEAFE; --rs-pastel-sky-ink:    #1E40AF;
+  --rs-pastel-rose:   #FCE7F3; --rs-pastel-rose-ink:   #BE185D;
+
+  /* Page background: very soft mint */
+  --rs-page: #EFF6F4;
+}
+
+/* ---------- Page chrome ---------- */
+.stApp {
+    background: var(--rs-page);
+}
+.main .block-container {
+    background: var(--rs-surface);
+    border-radius: 24px;
+    padding: 28px 32px 32px 32px;
+    margin-top: 12px;
+    margin-bottom: 16px;
+    box-shadow: var(--rs-shadow-lg);
+    max-width: 880px;
 }
 
 /* ---------- Typography ---------- */
-.stApp h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.015em; color: var(--rs-ink); }
+.stApp h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--rs-ink); margin-bottom: 4px; }
 .stApp h2 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--rs-ink); }
 .stApp h3 { font-size: 17px; font-weight: 600; color: var(--rs-ink); margin-bottom: 4px; }
 .stApp p, .stApp li, .stApp label { color: var(--rs-ink); font-size: 15px; line-height: 1.55; }
 .stApp [data-testid="stCaptionContainer"], .stApp small { color: var(--rs-ink-3); font-size: 13px; }
 
 /* ---------- Card surface (st.container with border) ---------- */
-[data-testid="stChatMessage"] [data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
-    padding: 4px 4px;
-}
 [data-testid="stChatMessage"] [data-testid="stVerticalBlockBorderWrapper"] {
     border-radius: var(--rs-radius) !important;
     border-color: var(--rs-border) !important;
@@ -44,15 +74,15 @@ _CSS = """
     box-shadow: var(--rs-shadow);
 }
 
-/* ---------- Buttons ---------- */
+/* ---------- Buttons (main column) ---------- */
 .stButton button {
     border-radius: var(--rs-radius-sm) !important;
     font-weight: 500 !important;
     transition: background-color .12s ease, border-color .12s ease, transform .04s ease;
 }
 .stButton button[kind="primary"], .stButton button[kind="primaryFormSubmit"] {
-    background: var(--rs-primary) !important;
-    border: 1px solid var(--rs-primary) !important;
+    background: var(--rs-ink) !important;
+    border: 1px solid var(--rs-ink) !important;
     color: #FFFFFF !important;
     font-weight: 600 !important;
 }
@@ -70,7 +100,7 @@ _CSS = """
     color: var(--rs-ink) !important;
 }
 
-/* ---------- Banners (st.success / .warning / .info / .error) ---------- */
+/* ---------- Banners ---------- */
 [data-baseweb="notification"] { border-radius: var(--rs-radius-sm) !important; }
 div[data-testid="stAlert"][kind="success"],
 div[data-testid="stNotification"][kind="success"] {
@@ -93,32 +123,30 @@ div[data-testid="stNotification"][kind="error"] {
     border-left: 3px solid var(--rs-danger) !important;
 }
 
-/* ---------- Chat avatars (override Streamlit default tints) ---------- */
+/* ---------- Chat avatars ---------- */
 [data-testid="stChatMessageAvatarUser"],
 [data-testid="chatAvatarIcon-user"] {
-    background-color: var(--rs-primary) !important;
+    background-color: var(--rs-ink) !important;
     color: #FFFFFF !important;
 }
 [data-testid="stChatMessageAvatarAssistant"],
 [data-testid="chatAvatarIcon-assistant"] {
-    background-color: var(--rs-ink) !important;
-    color: #FFFFFF !important;
+    background-color: var(--rs-pastel-mint) !important;
+    color: var(--rs-pastel-mint-ink) !important;
 }
 [data-testid="stChatMessageAvatarUser"] svg,
-[data-testid="chatAvatarIcon-user"] svg,
+[data-testid="chatAvatarIcon-user"] svg { fill: #FFFFFF !important; }
 [data-testid="stChatMessageAvatarAssistant"] svg,
-[data-testid="chatAvatarIcon-assistant"] svg {
-    fill: #FFFFFF !important;
-}
+[data-testid="chatAvatarIcon-assistant"] svg { fill: var(--rs-pastel-mint-ink) !important; }
 
-/* ---------- Custom card chrome ---------- */
+/* ---------- Custom card chrome (main column) ---------- */
 .rs-card-head {
     display: flex; align-items: center; gap: 12px;
-    padding: 4px 0 6px 0;
+    padding: 4px 0 8px 0;
 }
 .rs-card-icon {
-    width: 36px; height: 36px; border-radius: 10px;
-    background: var(--rs-primary-50); color: var(--rs-primary);
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--rs-pastel-mint); color: var(--rs-pastel-mint-ink);
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
 }
@@ -127,71 +155,79 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-card-title { font-size: 17px; font-weight: 600; color: var(--rs-ink); }
 .rs-card-subtitle { font-size: 13px; color: var(--rs-ink-2); margin-top: 2px; }
 
-/* ---------- Chips (quick actions) ---------- */
+/* ---------- Chips (quick actions empty state) ---------- */
 .rs-chip-row {
     display: flex; gap: 8px; flex-wrap: wrap;
-    margin: 4px 0 12px 0;
+    margin: 8px 0 14px 0;
 }
 .rs-chip-row .stButton button {
-    background: var(--rs-surface) !important;
-    border: 1px solid var(--rs-border) !important;
-    color: var(--rs-ink-2) !important;
-    border-radius: 9999px !important;
-    padding: 4px 14px !important;
+    background: var(--rs-pastel-mint) !important;
+    border: 1px solid transparent !important;
+    color: var(--rs-pastel-mint-ink) !important;
+    border-radius: var(--rs-radius-pill) !important;
+    padding: 6px 14px !important;
     font-size: 13px !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
 }
 .rs-chip-row .stButton button:hover {
-    background: var(--rs-primary-50) !important;
-    border-color: var(--rs-primary) !important;
-    color: var(--rs-primary) !important;
+    background: var(--rs-pastel-mint-ink) !important;
+    color: #FFFFFF !important;
 }
 
-/* ---------- Hero metric (balance view) ---------- */
+/* ---------- Hero metric (balance, RMD, loan quote) ---------- */
 .rs-hero {
-    padding: 12px 4px 8px 4px;
+    background: var(--rs-pastel-mint);
+    border-radius: var(--rs-radius);
+    padding: 18px 20px;
+    margin: 4px 0 12px 0;
 }
 .rs-hero-label {
-    font-size: 12px; color: var(--rs-ink-3);
-    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+    font-size: 12px; color: var(--rs-pastel-mint-ink);
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;
 }
 .rs-hero-metric {
     font-size: 40px; font-weight: 700; line-height: 1.1;
     color: var(--rs-ink); letter-spacing: -0.025em;
-    margin: 4px 0;
+    margin: 6px 0 2px 0;
 }
-.rs-hero-sub {
-    font-size: 14px; color: var(--rs-ink-2);
-}
+.rs-hero-sub { font-size: 13px; color: var(--rs-ink-2); }
 
-/* Account mini-card grid */
+/* Account mini-card grid (balance view) */
 .rs-account-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 10px; margin-top: 6px;
+    gap: 12px; margin-top: 10px;
 }
 .rs-account-card {
-    border: 1px solid var(--rs-border); border-radius: var(--rs-radius-sm);
-    padding: 12px 14px; background: var(--rs-surface);
+    border: none; border-radius: var(--rs-radius);
+    padding: 14px 16px;
+    background: var(--rs-pastel-violet);
+    color: var(--rs-pastel-violet-ink);
 }
-.rs-account-plan { font-size: 14px; font-weight: 600; color: var(--rs-ink); }
+.rs-account-card:nth-child(2n) { background: var(--rs-pastel-peach); color: var(--rs-pastel-peach-ink); }
+.rs-account-card:nth-child(3n) { background: var(--rs-pastel-sky);    color: var(--rs-pastel-sky-ink); }
+.rs-account-card:nth-child(4n) { background: var(--rs-pastel-cream);  color: var(--rs-pastel-cream-ink); }
+.rs-account-card:nth-child(5n) { background: var(--rs-pastel-rose);   color: var(--rs-pastel-rose-ink); }
+
+.rs-account-plan { font-size: 14px; font-weight: 700; color: inherit; }
 .rs-account-tag {
-    display: inline-block; font-size: 11px; font-weight: 600;
-    color: var(--rs-primary); background: var(--rs-primary-50);
-    padding: 2px 8px; border-radius: 9999px; margin-top: 4px;
-    text-transform: uppercase; letter-spacing: 0.04em;
+    display: inline-block; font-size: 10px; font-weight: 700;
+    color: inherit; background: rgba(255,255,255,0.55);
+    padding: 2px 8px; border-radius: var(--rs-radius-pill); margin-top: 6px;
+    text-transform: uppercase; letter-spacing: 0.05em;
 }
 .rs-account-balance {
-    font-size: 18px; font-weight: 600; color: var(--rs-ink); margin-top: 8px;
+    font-size: 20px; font-weight: 700; color: var(--rs-ink); margin-top: 10px;
+    letter-spacing: -0.01em;
 }
-.rs-account-vested { font-size: 12px; color: var(--rs-ink-3); }
+.rs-account-vested { font-size: 12px; color: var(--rs-ink-2); margin-top: 2px; }
 
 /* ---------- Transaction list ---------- */
-.rs-txn-filter-row { display: flex; gap: 6px; margin: 4px 0 8px 0; flex-wrap: wrap; }
+.rs-txn-filter-row { display: flex; gap: 6px; margin: 6px 0 10px 0; flex-wrap: wrap; }
 .rs-txn-list { margin-top: 4px; }
 .rs-txn-row {
     display: grid; grid-template-columns: 84px 1fr 110px;
     align-items: center; gap: 12px;
-    padding: 10px 4px; border-bottom: 1px solid var(--rs-border);
+    padding: 12px 4px; border-bottom: 1px solid var(--rs-border);
 }
 .rs-txn-row:last-child { border-bottom: none; }
 .rs-txn-date {
@@ -201,92 +237,30 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-txn-type {
     display: inline-block; font-size: 11px; font-weight: 600;
     color: var(--rs-ink-2); background: var(--rs-surface-3);
-    padding: 1px 7px; border-radius: 9999px; margin-right: 6px;
+    padding: 2px 8px; border-radius: var(--rs-radius-pill); margin-right: 6px;
     text-transform: capitalize;
 }
 .rs-txn-desc { color: var(--rs-ink-2); font-size: 13px; }
 .rs-txn-amt {
-    font-size: 15px; font-weight: 600; text-align: right;
-    font-variant-numeric: tabular-nums;
+    font-size: 15px; font-weight: 700; text-align: right;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
 }
 .rs-txn-amt-pos { color: var(--rs-success); }
 .rs-txn-amt-neg { color: var(--rs-danger); }
 .rs-txn-amt-neu { color: var(--rs-ink); }
 
-/* ---------- Sidebar ---------- */
-[data-testid="stSidebar"] { background: var(--rs-surface-2); }
-.rs-brand-mark {
-    display: flex; align-items: center; gap: 10px;
-    padding: 4px 0 0 0;
-}
-.rs-brand-logo {
-    width: 36px; height: 36px; border-radius: 10px;
-    background: var(--rs-primary); color: #FFFFFF;
-    display: inline-flex; align-items: center; justify-content: center;
-}
-.rs-brand-logo .material-symbols-outlined { font-size: 22px; }
-.rs-brand-name { font-size: 18px; font-weight: 700; color: var(--rs-ink); letter-spacing: -0.01em; }
-.rs-brand-tag { font-size: 11px; color: var(--rs-ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
-
-.rs-cust-card {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px; background: var(--rs-surface);
-    border: 1px solid var(--rs-border); border-radius: var(--rs-radius-sm);
-    margin: 12px 0 8px 0;
-}
-.rs-cust-avatar {
-    width: 40px; height: 40px; border-radius: 50%;
-    background: var(--rs-primary); color: #FFFFFF;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-weight: 600; font-size: 16px; flex-shrink: 0;
-}
-.rs-cust-name { font-size: 14px; font-weight: 600; color: var(--rs-ink); line-height: 1.2; }
-.rs-cust-id { font-size: 11px; color: var(--rs-ink-3); margin-top: 2px; }
-.rs-cust-lastlogin { font-size: 11px; color: var(--rs-ink-3); margin-top: 4px; }
-
-.rs-section-label {
-    font-size: 11px; color: var(--rs-ink-3); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.07em;
-    margin: 14px 0 6px 0;
-}
-
-.rs-contact-card {
-    background: var(--rs-surface); border: 1px solid var(--rs-border);
-    border-radius: var(--rs-radius-sm); padding: 12px; margin-top: 8px;
-}
-.rs-contact-line {
-    font-size: 12px; color: var(--rs-ink-2); display: flex; align-items: center; gap: 6px;
-    margin: 4px 0;
-}
-.rs-contact-line .material-symbols-outlined { font-size: 16px; color: var(--rs-ink-3); }
-
-.rs-security-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 11px; color: var(--rs-success);
-    background: var(--rs-success-bg); padding: 2px 8px;
-    border-radius: 9999px; margin-top: 6px;
-}
-.rs-security-badge .material-symbols-outlined { font-size: 14px; }
-
-/* ---------- Footer (compliance) ---------- */
-.rs-footer {
-    color: var(--rs-ink-3); font-size: 11px; line-height: 1.5;
-    text-align: center; margin: 32px auto 8px auto; padding: 12px 16px;
-    border-top: 1px solid var(--rs-border); max-width: 720px;
-}
-
 /* ---------- Request/document list rows ---------- */
 .rs-list-row {
     display: grid; grid-template-columns: 1fr auto;
     align-items: center; gap: 12px;
-    padding: 10px 8px; border-bottom: 1px solid var(--rs-border);
+    padding: 12px 8px; border-bottom: 1px solid var(--rs-border);
 }
 .rs-list-row:last-child { border-bottom: none; }
 .rs-list-title { font-size: 14px; font-weight: 600; color: var(--rs-ink); }
 .rs-list-meta { font-size: 12px; color: var(--rs-ink-3); margin-top: 2px; }
 .rs-status-pill {
-    display: inline-block; font-size: 11px; font-weight: 600;
-    padding: 2px 10px; border-radius: 9999px;
+    display: inline-block; font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: var(--rs-radius-pill);
     text-transform: capitalize;
 }
 .rs-status-pending { background: var(--rs-warning-bg); color: var(--rs-warning); }
@@ -294,15 +268,206 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-status-cancelled { background: var(--rs-surface-3); color: var(--rs-ink-3); }
 .rs-status-rejected { background: var(--rs-danger-bg); color: var(--rs-danger); }
 
-/* ---------- Tighter inputs ---------- */
-.stTextInput input, .stTextArea textarea, .stDateInput input, .stSelectbox [data-baseweb="select"] > div {
+/* ---------- Drift indicator ---------- */
+.rs-drift-pos { color: var(--rs-success); font-weight: 700; }
+.rs-drift-neg { color: var(--rs-danger); font-weight: 700; }
+.rs-drift-flat { color: var(--rs-ink-3); }
+
+/* ---------- Inputs ---------- */
+.stTextInput input, .stTextArea textarea, .stDateInput input, .stNumberInput input,
+.stSelectbox [data-baseweb="select"] > div {
     border-radius: var(--rs-radius-sm) !important;
 }
 
-/* ---------- Drift indicator (rebalance) ---------- */
-.rs-drift-pos { color: var(--rs-success); font-weight: 600; }
-.rs-drift-neg { color: var(--rs-danger); font-weight: 600; }
-.rs-drift-flat { color: var(--rs-ink-3); }
+/* ============================================================
+   DARK SIDEBAR
+   ============================================================ */
+[data-testid="stSidebar"] {
+    background: var(--rs-dark) !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    background: var(--rs-dark) !important;
+}
+/* Sidebar typography */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] li {
+    color: var(--rs-dark-ink) !important;
+}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] small {
+    color: var(--rs-dark-ink-3) !important;
+}
+[data-testid="stSidebar"] hr {
+    border-color: var(--rs-dark-border) !important;
+}
+
+/* Sidebar buttons */
+[data-testid="stSidebar"] .stButton button {
+    background: transparent !important;
+    color: var(--rs-dark-ink-2) !important;
+    border: 1px solid var(--rs-dark-border) !important;
+    border-radius: var(--rs-radius-sm) !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+}
+[data-testid="stSidebar"] .stButton button:hover {
+    background: var(--rs-dark-2) !important;
+    color: var(--rs-dark-ink) !important;
+    border-color: var(--rs-dark-3) !important;
+}
+[data-testid="stSidebar"] .stButton button[kind="primary"] {
+    background: var(--rs-pastel-mint) !important;
+    color: var(--rs-dark) !important;
+    border: 1px solid var(--rs-pastel-mint) !important;
+    font-weight: 700 !important;
+}
+[data-testid="stSidebar"] .stButton button[kind="primary"]:hover {
+    background: #A7F3D0 !important;
+}
+
+/* Brand mark in sidebar */
+.rs-brand-mark {
+    display: flex; align-items: center; gap: 12px;
+    padding: 4px 4px 12px 4px;
+}
+.rs-brand-logo {
+    width: 38px; height: 38px; border-radius: 11px;
+    background: var(--rs-pastel-mint); color: var(--rs-pastel-mint-ink);
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.rs-brand-logo .material-symbols-outlined { font-size: 22px; }
+.rs-brand-name { font-size: 18px; font-weight: 700; color: var(--rs-dark-ink); letter-spacing: -0.01em; }
+.rs-brand-tag { font-size: 10px; color: var(--rs-dark-ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* Profile pill at top of sidebar — matches the reference's avatar-name-chevron pill */
+.rs-profile-pill {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px 8px 8px;
+    background: var(--rs-dark-2);
+    border-radius: var(--rs-radius-pill);
+    margin: 8px 0 14px 0;
+}
+.rs-profile-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--rs-pastel-violet); color: var(--rs-pastel-violet-ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px;
+}
+.rs-profile-name { font-size: 13px; font-weight: 600; color: var(--rs-dark-ink); }
+.rs-profile-id { font-size: 10px; color: var(--rs-dark-ink-3); }
+
+/* Sidebar account snapshot card */
+.rs-snap-card {
+    background: var(--rs-dark-2);
+    border-radius: var(--rs-radius);
+    padding: 14px 16px;
+    margin: 4px 0 14px 0;
+}
+.rs-snap-label {
+    font-size: 10px; color: var(--rs-dark-ink-3);
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;
+}
+.rs-snap-metric {
+    font-size: 24px; font-weight: 700; color: var(--rs-dark-ink);
+    letter-spacing: -0.02em; margin-top: 4px;
+}
+.rs-snap-sub { font-size: 11px; color: var(--rs-dark-ink-3); margin-top: 2px; }
+.rs-snap-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.rs-snap-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 9px; border-radius: var(--rs-radius-pill);
+    background: var(--rs-pastel-mint); color: var(--rs-pastel-mint-ink);
+}
+.rs-snap-pill.alt { background: var(--rs-pastel-violet); color: var(--rs-pastel-violet-ink); }
+
+/* Section labels in sidebar */
+.rs-section-label {
+    font-size: 10px; color: var(--rs-dark-ink-3); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.09em;
+    margin: 14px 0 8px 4px;
+}
+
+/* Conversation list rows (sidebar) */
+.rs-conv-list { display: flex; flex-direction: column; gap: 4px; }
+[data-testid="stSidebar"] .rs-conv-list .stButton button {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: var(--rs-dark-ink-2) !important;
+    padding: 8px 10px !important;
+    font-weight: 500 !important;
+    line-height: 1.3 !important;
+    white-space: normal !important;
+    text-align: left !important;
+}
+[data-testid="stSidebar"] .rs-conv-list .stButton button:hover {
+    background: var(--rs-dark-2) !important;
+    color: var(--rs-dark-ink) !important;
+    border-color: var(--rs-dark-border) !important;
+}
+[data-testid="stSidebar"] .rs-conv-list .stButton button.active {
+    background: var(--rs-dark-2) !important;
+    color: var(--rs-dark-ink) !important;
+    border-color: var(--rs-dark-3) !important;
+}
+.rs-conv-empty {
+    color: var(--rs-dark-ink-3); font-size: 12px; padding: 8px 10px;
+    border: 1px dashed var(--rs-dark-border); border-radius: var(--rs-radius-sm);
+}
+
+/* Sidebar contact card */
+.rs-contact-card {
+    background: var(--rs-dark-2); border: none;
+    border-radius: var(--rs-radius-sm); padding: 12px 14px; margin-top: 8px;
+}
+.rs-contact-line {
+    font-size: 12px; color: var(--rs-dark-ink-2);
+    display: flex; align-items: center; gap: 6px;
+    margin: 4px 0;
+}
+.rs-contact-line .material-symbols-outlined { font-size: 16px; color: var(--rs-dark-ink-3); }
+.rs-security-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700; color: var(--rs-pastel-mint-ink);
+    background: var(--rs-pastel-mint); padding: 3px 9px;
+    border-radius: var(--rs-radius-pill); margin-top: 8px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+.rs-security-badge .material-symbols-outlined { font-size: 12px; }
+
+/* ---------- Compliance footer ---------- */
+.rs-footer {
+    color: var(--rs-ink-3); font-size: 11px; line-height: 1.5;
+    text-align: center; margin: 24px auto 4px auto; padding: 14px 16px;
+    border-top: 1px solid var(--rs-border); max-width: 720px;
+}
+
+/* ---------- Top profile pill (main column header) ---------- */
+.rs-header-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px;
+}
+.rs-header-pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 4px 14px 4px 4px;
+    background: var(--rs-surface-2);
+    border-radius: var(--rs-radius-pill);
+    border: 1px solid var(--rs-border);
+}
+.rs-header-pill .rs-pill-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--rs-pastel-violet); color: var(--rs-pastel-violet-ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px;
+}
+.rs-header-pill .rs-pill-name { font-size: 13px; font-weight: 600; color: var(--rs-ink); }
+.rs-header-pill .material-symbols-outlined {
+    font-size: 16px; color: var(--rs-ink-3); margin-left: 2px;
+}
 </style>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
