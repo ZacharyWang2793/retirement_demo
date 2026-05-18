@@ -23,6 +23,7 @@ from db.connection import get_db
 from db.repository import Repository
 from ui.cards import render_card
 from ui.chat import render_chat_history, render_quick_actions
+from ui.overview import render_overview
 from ui.styles import icon_html, inject_global_css
 
 load_dotenv()
@@ -130,6 +131,16 @@ if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
 if "started_at" not in st.session_state:
     st.session_state.started_at = _now_iso()
+if "page" not in st.session_state:
+    st.session_state.page = "overview"  # "overview" | "chat"
+
+
+def _go_chat() -> None:
+    st.session_state.page = "chat"
+
+
+def _go_overview() -> None:
+    st.session_state.page = "overview"
 
 
 # ---------- customer + account snapshot ----------
@@ -154,6 +165,20 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+
+    # Page toggle (Overview | Chat)
+    toggle_class = "is-overview" if st.session_state.page == "overview" else "is-chat"
+    st.markdown(f'<div class="rs-page-toggle {toggle_class}">', unsafe_allow_html=True)
+    nav_cols = st.columns(2)
+    with nav_cols[0]:
+        if st.button("Overview", key="nav-overview", use_container_width=True):
+            _go_overview()
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("Chat", key="nav-chat", use_container_width=True):
+            _go_chat()
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # Profile pill (avatar + name + member id)
     if c:
@@ -254,12 +279,15 @@ with st.sidebar:
 
 # ---------- main column header ----------
 
+page_titles = {"overview": "Overview", "chat": "Account support"}
+header_title = page_titles.get(st.session_state.page, "RetireSafe")
+
 if c:
     initial_main = (c["first_name"][:1] or "?").upper()
     st.markdown(
         f"""
         <div class="rs-header-row">
-          <h1 style="margin:0;">Account support</h1>
+          <h1 style="margin:0;">{html.escape(header_title)}</h1>
           <div class="rs-header-pill">
             <span class="rs-pill-avatar">{html.escape(initial_main)}</span>
             <span class="rs-pill-name">{html.escape(c["first_name"])} {html.escape(c["last_name"])}</span>
@@ -270,7 +298,7 @@ if c:
         unsafe_allow_html=True,
     )
 else:
-    st.title("Account support")
+    st.title(header_title)
 
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -509,49 +537,55 @@ def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None
     _absorb_run(payload, spinner_label="Thinking...")
 
 
-# ---------- render history first ----------
+# ---------- page routing ----------
 
-render_chat_history(st.session_state.history)
+if st.session_state.page == "overview":
+    if c:
+        render_overview(repo, st.session_state.customer_id, on_go_chat=_go_chat)
+    else:
+        st.warning("Customer record not found.")
+    is_paused = False
+    values = {}
+else:
+    # ---- Chat page ----
+    # Render the chat scroll history
+    render_chat_history(st.session_state.history)
+
+    # Handle the current state of the graph
+    snap = graph.get_state(config)
+    values = snap.values or {}
+    pending_card = values.get("pending_card")
+    is_paused = bool(snap.next) and pending_card is not None
+
+    if is_paused:
+        # Mid-flow card: form submission resumes the graph.
+        card_key = f"card-{st.session_state.thread_id}-{values.get('current_step_idx', 0)}-{getattr(pending_card, 'card_type', 'x')}"
+        submitted = render_card(pending_card, key=card_key)
+        if submitted is not None:
+            _archive_card_summary(pending_card, submitted)
+            label = "Saving your changes..." if pending_card.card_type == "confirmation" else "Working..."
+            _absorb_run(Command(resume=submitted), spinner_label=label)
+            st.rerun()
+
+    elif values.get("final_card") is not None:
+        # Terminal inform card (success / balance / not_implemented). Render until dismissed.
+        final_card = values["final_card"]
+        card_key = f"card-{st.session_state.thread_id}-final-{values.get('intent')}"
+        submitted = render_card(final_card, key=card_key)
+        if submitted is not None:
+            _archive_terminal_card(final_card)
+            _clear_terminal_state()
+            st.rerun()
+
+    # Chip row when chat is empty
+    if not st.session_state.history and not is_paused and values.get("final_card") is None:
+        chip = render_quick_actions()
+        if chip:
+            st.session_state.pending_prompt = chip
+            st.rerun()
 
 
-# ---------- handle the current state of the graph ----------
-
-snap = graph.get_state(config)
-values = snap.values or {}
-pending_card = values.get("pending_card")
-is_paused = bool(snap.next) and pending_card is not None
-
-if is_paused:
-    # Mid-flow card: form submission resumes the graph.
-    card_key = f"card-{st.session_state.thread_id}-{values.get('current_step_idx', 0)}-{getattr(pending_card, 'card_type', 'x')}"
-    submitted = render_card(pending_card, key=card_key)
-    if submitted is not None:
-        _archive_card_summary(pending_card, submitted)
-        label = "Saving your changes..." if pending_card.card_type == "confirmation" else "Working..."
-        _absorb_run(Command(resume=submitted), spinner_label=label)
-        st.rerun()
-
-elif values.get("final_card") is not None:
-    # Terminal inform card (success / balance / not_implemented). Render until dismissed.
-    final_card = values["final_card"]
-    card_key = f"card-{st.session_state.thread_id}-final-{values.get('intent')}"
-    submitted = render_card(final_card, key=card_key)
-    if submitted is not None:
-        _archive_terminal_card(final_card)
-        _clear_terminal_state()
-        st.rerun()
-
-
-# ---------- chip row when chat is empty ----------
-
-if not st.session_state.history and not is_paused and values.get("final_card") is None:
-    chip = render_quick_actions()
-    if chip:
-        st.session_state.pending_prompt = chip
-        st.rerun()
-
-
-# ---------- compliance footer ----------
+# ---------- compliance footer (both pages) ----------
 
 st.markdown(
     """
@@ -565,16 +599,17 @@ st.markdown(
 )
 
 
-# ---------- chat input ----------
+# ---------- chat input (chat page only) ----------
 
-# Resolve any quick-action pending prompt set by the empty-state chip row.
-if st.session_state.pending_prompt:
-    prompt = st.session_state.pending_prompt
-    st.session_state.pending_prompt = None
-    _start_turn(prompt, is_paused, values)
-    st.rerun()
+if st.session_state.page == "chat":
+    # Resolve any quick-action pending prompt set by the empty-state chip row.
+    if st.session_state.pending_prompt:
+        prompt = st.session_state.pending_prompt
+        st.session_state.pending_prompt = None
+        _start_turn(prompt, is_paused, values)
+        st.rerun()
 
-user_text = st.chat_input("How can I help?")
-if user_text:
-    _start_turn(user_text, is_paused, values)
-    st.rerun()
+    user_text = st.chat_input("How can I help?")
+    if user_text:
+        _start_turn(user_text, is_paused, values)
+        st.rerun()
