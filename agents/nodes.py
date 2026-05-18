@@ -276,6 +276,11 @@ def render_step(state: AgentState, repo: Repository) -> dict[str, Any]:
     if step["kind"] == "verify" and state.get("verified"):
         return {"current_step_idx": idx + 1, "pending_card": None}
 
+    # Conditional skip — any step can declare a skip_if(state) predicate.
+    skip_if = step.get("skip_if")
+    if skip_if and skip_if(state):
+        return {"current_step_idx": idx + 1, "pending_card": None}
+
     # Inform-only steps with a card factory: render and end (no interrupt below).
     if step["kind"] == "inform":
         card = step["card_factory"](state, repo) if step["card_factory"] else None
@@ -381,6 +386,10 @@ def route_after_render(state: AgentState) -> str:
     if idx >= len(plan) or state.get("plan_complete"):
         return "end"
     step = plan[idx]
+    # Conditional skip — loop back to render_step to advance past this step.
+    skip_if = step.get("skip_if")
+    if skip_if and skip_if(state):
+        return "render_step"
     if step["kind"] == "inform":
         return "end"
     if step["kind"] == "persist":

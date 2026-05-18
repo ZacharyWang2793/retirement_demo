@@ -10,7 +10,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY
+# Edit .env and set AZURE_OPENAI_API_KEY (and AZURE_OPENAI_BASE_URL / AZURE_MODEL_DEPLOYMENT)
 
 python -m data.seed
 streamlit run app.py

@@ -172,7 +172,20 @@ CREATE TABLE IF NOT EXISTS audit_log (
     FOREIGN KEY (customer_id) REFERENCES customers(id)
 );
 
+CREATE TABLE IF NOT EXISTS mfa_devices (
+    id            TEXT PRIMARY KEY,
+    customer_id   TEXT NOT NULL,
+    kind          TEXT NOT NULL,                  -- sms | totp | hardware
+    label         TEXT NOT NULL,
+    contact       TEXT,                           -- masked phone for sms; null otherwise
+    enrolled_at   TEXT NOT NULL,
+    last_used_at  TEXT,
+    status        TEXT NOT NULL DEFAULT 'active', -- active | removed
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_accounts_customer ON accounts(customer_id);
+CREATE INDEX IF NOT EXISTS idx_mfa_customer ON mfa_devices(customer_id, status);
 CREATE INDEX IF NOT EXISTS idx_beneficiaries_account ON beneficiaries(account_id);
 CREATE INDEX IF NOT EXISTS idx_investments_account ON investments(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id, txn_date DESC);

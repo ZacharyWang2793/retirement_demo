@@ -69,10 +69,10 @@ def _insert_customer(conn, c):
     )
     conn.execute(
         """
-        INSERT INTO users (id, customer_id, email, password_hash_mock, mfa_enabled)
-        VALUES (?, ?, ?, 'mock-hash', 1)
+        INSERT INTO users (id, customer_id, email, password_hash_mock, mfa_enabled, last_login_at)
+        VALUES (?, ?, ?, 'mock-hash', 1, ?)
         """,
-        (f"usr-{c['id']}", c["id"], c["email"]),
+        (f"usr-{c['id']}", c["id"], c["email"], "2026-05-18T11:30:00Z"),
     )
     conn.execute(
         """
@@ -80,6 +80,33 @@ def _insert_customer(conn, c):
         VALUES (?, 1, 0, 1)
         """,
         (c["id"],),
+    )
+    # Two enrolled MFA devices per customer so the remove-flow demo has options.
+    conn.executemany(
+        """
+        INSERT INTO mfa_devices (id, customer_id, kind, label, contact, enrolled_at, last_used_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+        """,
+        [
+            (f"mfa-{c['id']}-sms", c["id"], "sms", "Primary phone", c["phone"], "2024-02-12T09:14:00Z", "2026-05-17T08:01:00Z"),
+            (f"mfa-{c['id']}-totp", c["id"], "totp", "Authenticator app", None, "2024-09-30T12:00:00Z", "2026-05-16T18:42:00Z"),
+        ],
+    )
+    # One pending request so check_request_status / cancel_request demos have data.
+    conn.execute(
+        """
+        INSERT INTO requests (id, client_request_id, customer_id, type, status,
+                              payload_json, routing_target, created_at, resolved_at)
+        VALUES (?, ?, ?, ?, 'pending', ?, 'self_service', ?, NULL)
+        """,
+        (
+            f"req-seed-{c['id']}",
+            f"seed-{c['id']}-pending",
+            c["id"],
+            "change_phone",
+            '{"phone": "555-555-0001"}',
+            "2026-05-15T10:20:00Z",
+        ),
     )
 
 

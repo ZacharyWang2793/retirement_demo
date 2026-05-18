@@ -258,10 +258,12 @@ def test_add_beneficiary_full_flow():
 
 
 # ------------------------------------------------------------------
-# Stub intent (rollover_out) renders NotImplementedCard
+# Tier-3 specialist-routed intent (rollover_out)
 # ------------------------------------------------------------------
 
-def test_stub_intent_renders_not_implemented():
+def test_rollover_out_routes_to_real_flow():
+    """Previously a NotImplementedCard stub; now a real multi-step flow that
+    ends with a SpecialistRoutingCard and a pending request."""
     repo = Repository(get_db())
     g = build_graph(repo)
     tid = _new_thread_id()
@@ -278,10 +280,9 @@ def test_stub_intent_renders_not_implemented():
         },
         config,
     )
-    final_card = snap.values.get("final_card")
-    assert final_card is not None
-    assert final_card.card_type == "not_implemented"
-    assert final_card.intent.lower().startswith("roll")
+    assert snap.values.get("intent") == "rollover_out"
+    assert snap.values.get("pending_card") is not None
+    assert snap.values["pending_card"].card_type == "identity_verification"
 
 
 # ------------------------------------------------------------------
@@ -462,8 +463,10 @@ def test_agent_node_tool_call_routes_to_workflow(monkeypatch):
     )
     assert snap.values.get("intent") == "change_name"
     assert snap.values.get("routed_via") == "agent"
-    assert snap.values.get("final_card") is not None
-    assert snap.values["final_card"].card_type == "not_implemented"
+    # change_name now has a real plan — it pauses on identity verification.
+    pending = snap.values.get("pending_card")
+    assert pending is not None
+    assert pending.card_type == "identity_verification"
     ann = snap.values.get("routing_announcement", "")
     assert "legal name" in ann.lower()
 
