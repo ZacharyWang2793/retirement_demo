@@ -455,6 +455,10 @@ def _clear_terminal_state() -> None:
 
 def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None:
     """Push a user message into the thread and run the graph from a fresh turn."""
+    # Belt-and-suspenders: if a terminal card is still in graph state (e.g., the
+    # auto-store rerun hasn't fired yet), persist it now so it isn't lost.
+    if values.get("final_card") is not None:
+        _store_card_in_history(values["final_card"])
     st.session_state.history.append({"role": "user", "content": user_text})
     if is_paused:
         # Cancel the in-flight flow first; cancel signal lands cleanly via the validator.
@@ -503,19 +507,17 @@ if is_paused:
         st.rerun()
 
 elif values.get("final_card") is not None:
-    # Terminal inform card (success / balance / not_implemented). Render until dismissed.
-    final_card = values["final_card"]
-    card_key = f"card-{st.session_state.thread_id}-final-{values.get('intent')}"
-    submitted = render_card(final_card, key=card_key)
-    if submitted is not None:
-        _store_card_in_history(final_card)
-        _clear_terminal_state()
-        st.rerun()
+    # Terminal card arrived — persist it to history immediately (no "Done" click needed)
+    # and reset orchestration state. The card will render read-only via
+    # render_chat_history on the very next pass, leaving the chat input free.
+    _store_card_in_history(values["final_card"])
+    _clear_terminal_state()
+    st.rerun()
 
 
 # ---------- chip row when chat is empty ----------
 
-if not st.session_state.history and not is_paused and values.get("final_card") is None:
+if not st.session_state.history and not is_paused:
     chip = render_quick_actions()
     if chip:
         st.session_state.pending_prompt = chip
