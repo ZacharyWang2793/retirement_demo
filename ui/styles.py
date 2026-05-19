@@ -82,8 +82,8 @@ header[data-testid="stHeader"] {
 .main .block-container {
     background: var(--rs-surface);
     border-radius: 24px;
-    padding: 28px 32px 32px 32px;
-    margin-top: 12px;
+    padding: 16px 32px 32px 32px;
+    margin-top: 2px;
     margin-bottom: 16px;
     box-shadow: var(--rs-shadow-lg);
     max-width: 880px;
@@ -434,6 +434,28 @@ div[data-testid="stNotification"][kind="error"] {
     color: var(--rs-ink) !important;
 }
 
+/* ── New conversation button (ChatGPT nav-item style) ── */
+.rs-new-conv-btn .stButton button {
+    background: var(--rs-dark-2) !important;
+    color: var(--rs-dark-ink) !important;
+    border: none !important;
+    border-radius: var(--rs-radius-sm) !important;
+    text-align: left !important;
+    font-weight: 500 !important;
+    font-size: 14px !important;
+    padding: 10px 14px !important;
+    margin-bottom: 8px !important;
+}
+.rs-new-conv-btn .stButton button p,
+.rs-new-conv-btn .stButton button span,
+.rs-new-conv-btn .stButton button div {
+    color: var(--rs-dark-ink) !important;
+}
+.rs-new-conv-btn .stButton button:hover {
+    background: var(--rs-dark-3) !important;
+    color: var(--rs-dark-ink) !important;
+}
+
 /* Brand mark in sidebar */
 .rs-brand-mark {
     display: flex; align-items: center; gap: 12px;
@@ -497,31 +519,50 @@ div[data-testid="stNotification"][kind="error"] {
     margin: 14px 0 8px 4px;
 }
 
-/* Conversation list rows (sidebar) */
-.rs-conv-list { display: flex; flex-direction: column; gap: 4px; }
+/* Active / current conversation highlight */
+.rs-conv-active {
+    font-size: 14px; font-weight: 500;
+    color: var(--rs-dark-ink);
+    background: var(--rs-dark-3);
+    border-radius: var(--rs-radius-sm);
+    padding: 8px 12px;
+    margin: 0 0 4px 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: default;
+}
+
+/* Conversation list rows (sidebar) — borderless, ChatGPT-style */
+.rs-conv-list { display: flex; flex-direction: column; gap: 2px; }
 [data-testid="stSidebar"] .rs-conv-list .stButton button {
     background: transparent !important;
-    border: 1px solid transparent !important;
+    border: none !important;
     color: var(--rs-dark-ink-2) !important;
-    padding: 8px 10px !important;
-    font-weight: 500 !important;
-    line-height: 1.3 !important;
-    white-space: normal !important;
+    padding: 8px 12px !important;
+    font-weight: 400 !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     text-align: left !important;
+    border-radius: var(--rs-radius-sm) !important;
+}
+[data-testid="stSidebar"] .rs-conv-list .stButton button p,
+[data-testid="stSidebar"] .rs-conv-list .stButton button span,
+[data-testid="stSidebar"] .rs-conv-list .stButton button div {
+    color: inherit !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 [data-testid="stSidebar"] .rs-conv-list .stButton button:hover {
     background: var(--rs-dark-2) !important;
     color: var(--rs-dark-ink) !important;
-    border-color: var(--rs-dark-border) !important;
-}
-[data-testid="stSidebar"] .rs-conv-list .stButton button.active {
-    background: var(--rs-dark-2) !important;
-    color: var(--rs-dark-ink) !important;
-    border-color: var(--rs-dark-3) !important;
+    border: none !important;
 }
 .rs-conv-empty {
-    color: var(--rs-dark-ink-3); font-size: 12px; padding: 8px 10px;
-    border: 1px dashed var(--rs-dark-border); border-radius: var(--rs-radius-sm);
+    color: var(--rs-dark-ink-3); font-size: 13px;
+    padding: 10px 12px; line-height: 1.5;
 }
 
 /* Sidebar contact card */
@@ -551,28 +592,7 @@ div[data-testid="stNotification"][kind="error"] {
     border-top: 1px solid var(--rs-border); max-width: 720px;
 }
 
-/* ---------- Top profile pill (main column header) ---------- */
-.rs-header-row {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-bottom: 14px;
-}
-.rs-header-pill {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 4px 14px 4px 4px;
-    background: var(--rs-surface-2);
-    border-radius: var(--rs-radius-pill);
-    border: 1px solid var(--rs-border);
-}
-.rs-header-pill .rs-pill-avatar {
-    width: 28px; height: 28px; border-radius: 50%;
-    background: var(--rs-primary); color: #FFFFFF;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 12px;
-}
-.rs-header-pill .rs-pill-name { font-size: 13px; font-weight: 600; color: var(--rs-ink); }
-.rs-header-pill .material-symbols-outlined {
-    font-size: 16px; color: var(--rs-ink-3); margin-left: 2px;
-}
+/* (rs-header-row / rs-header-pill removed — main header is now plain h1) */
 </style>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />

@@ -70,6 +70,34 @@ def _conv_title(history: list[dict[str, Any]]) -> str:
     return "New conversation"
 
 
+def _group_conversations(convs: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Group past conversations by time period (most recent first within each group)."""
+    groups: dict[str, list] = {}
+    order: list[str] = []
+    now = datetime.utcnow()
+    for conv in reversed(convs):  # most-recent first
+        try:
+            ts = datetime.fromisoformat(conv["last_at"].replace("Z", ""))
+            delta = now - ts
+            if delta.days == 0:
+                label = "Today"
+            elif delta.days == 1:
+                label = "Yesterday"
+            elif delta.days < 7:
+                label = "Previous 7 days"
+            elif delta.days < 30:
+                label = "Previous 30 days"
+            else:
+                label = ts.strftime("%B %Y")
+        except Exception:
+            label = "Older"
+        if label not in groups:
+            groups[label] = []
+            order.append(label)
+        groups[label].append(conv)
+    return [(k, groups[k]) for k in order]
+
+
 def _archive_current_conversation() -> None:
     """Snapshot the active thread into the conversations list (if it has any history)."""
     history = st.session_state.get("history") or []
@@ -141,7 +169,7 @@ balance = repo.get_balance_summary(st.session_state.customer_id) if c else None
 # ---------- sidebar ----------
 
 with st.sidebar:
-    # Brand
+    # Brand mark
     st.markdown(
         f"""
         <div class="rs-brand-mark">
@@ -155,7 +183,14 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # Profile pill (avatar + name + member id)
+    # New conversation — ChatGPT-style nav item
+    st.markdown('<div class="rs-new-conv-btn">', unsafe_allow_html=True)
+    if st.button("✏  New conversation", use_container_width=True, key="new-conv"):
+        _new_session(persist=True)
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Profile pill
     if c:
         initial = (c["first_name"][:1] or "?").upper()
         st.markdown(
@@ -171,10 +206,10 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-    # Account snapshot
+    # Account snapshot (no jargon badges)
     if balance:
         acct_count = len(balance["accounts"])
-        primary_type = balance["accounts"][0]["type"] if balance["accounts"] else ""
+        primary_type = balance["accounts"][0]["type"] if balance["accounts"] else "active"
         st.markdown(
             f"""
             <div class="rs-snap-card">
@@ -182,95 +217,58 @@ with st.sidebar:
               <div class="rs-snap-metric">${balance["total_balance"]:,.0f}</div>
               <div class="rs-snap-sub">${balance["vested_balance"]:,.0f} vested · {acct_count} account{"s" if acct_count != 1 else ""}</div>
               <div class="rs-snap-pills">
-                <span class="rs-snap-pill">{html.escape(primary_type) if primary_type else "active"}</span>
-                <span class="rs-snap-pill alt">TLS 1.3</span>
+                <span class="rs-snap-pill">{html.escape(primary_type)}</span>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    # New conversation button
-    if st.button("＋  New conversation", use_container_width=True, type="primary", key="new-conv"):
-        _new_session(persist=True)
-        st.rerun()
-
-    # Conversation history
-    st.markdown('<div class="rs-section-label">Conversations</div>', unsafe_allow_html=True)
+    # ── Conversation history (ChatGPT-style) ──────────────────────────────
     current_history = st.session_state.get("history") or []
     convs = list(st.session_state.conversations)
-    # Include the current conversation as the top entry (if it has any user message), highlighted.
-    current_entry = None
-    if current_history:
-        current_entry = {
-            "thread_id": st.session_state.thread_id,
-            "title": _conv_title(current_history),
-            "started_at": st.session_state.started_at,
-            "last_at": _now_iso(),
-        }
 
-    st.markdown('<div class="rs-conv-list">', unsafe_allow_html=True)
-    if current_entry:
-        st.caption(f"Now · {html.escape(current_entry['title'])}")
-    if not convs and not current_entry:
+    # Active conversation — highlighted, non-interactive
+    if current_history:
+        active_title = html.escape(_conv_title(current_history))
         st.markdown(
-            '<div class="rs-conv-empty">No past conversations yet. Start by asking a question below.</div>',
+            f'<div class="rs-conv-active">{active_title}</div>',
             unsafe_allow_html=True,
         )
-    # Most-recent first
-    for conv in reversed(convs):
-        label = conv["title"]
-        # Friendly time
-        try:
-            ts = datetime.fromisoformat(conv["last_at"].replace("Z", ""))
-            time_label = ts.strftime("%b %-d · %-I:%M %p")
-        except Exception:
-            time_label = conv["last_at"][:16].replace("T", " ")
-        if st.button(
-            f"{label}\n{time_label}",
-            key=f"conv-{conv['thread_id']}",
-            use_container_width=True,
-        ):
-            _switch_to_conversation(conv["thread_id"])
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Contact + security
-    st.markdown('<div class="rs-section-label">Need help?</div>', unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <div class="rs-contact-card">
-          <div class="rs-contact-line">{icon_html("call", size=16)} 1-800-555-7483</div>
-          <div class="rs-contact-line">{icon_html("schedule", size=16)} Mon – Fri · 8 am – 8 pm ET</div>
-          <span class="rs-security-badge">{icon_html("lock", size=12)} Encrypted · TLS 1.3</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    if st.button("Sign out", key="signout", use_container_width=True):
-        st.toast("Signed out (mock).", icon="🔒")
+    # Past conversations grouped by time period
+    if convs:
+        for group_label, group_convs in _group_conversations(convs):
+            st.markdown(
+                f'<div class="rs-section-label">{group_label}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="rs-conv-list">', unsafe_allow_html=True)
+            for conv in group_convs:
+                if st.button(
+                    conv["title"],
+                    key=f"conv-{conv['thread_id']}",
+                    use_container_width=True,
+                ):
+                    _switch_to_conversation(conv["thread_id"])
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    elif not current_history:
+        st.markdown(
+            '<div class="rs-conv-empty">No conversations yet.<br>Ask a question below to start.</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ---------- main column header ----------
 
 if c:
-    initial_main = (c["first_name"][:1] or "?").upper()
     st.markdown(
-        f"""
-        <div class="rs-header-row">
-          <h1 style="margin:0;">Account support</h1>
-          <div class="rs-header-pill">
-            <span class="rs-pill-avatar">{html.escape(initial_main)}</span>
-            <span class="rs-pill-name">{html.escape(c["first_name"])} {html.escape(c["last_name"])}</span>
-            {icon_html("expand_more", size=16)}
-          </div>
-        </div>
-        """,
+        f'<h1 style="margin:0 0 4px 0;">Greetings, {html.escape(c["first_name"])}</h1>',
         unsafe_allow_html=True,
     )
 else:
-    st.title("Account support")
+    st.title("Greetings")
 
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
