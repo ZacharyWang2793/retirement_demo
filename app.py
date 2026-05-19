@@ -306,11 +306,8 @@ def _archive_card_summary(card, submission: dict[str, Any]) -> None:
         return
     if submission.get("_confirmed") or submission.get("_acknowledged"):
         return  # the success card itself is the summary; nothing extra needed
-    if card.card_type == "identity_verification":
-        st.session_state.history.append({"role": "system", "content": "_Identity verified._"})
-    elif card.card_type == "otp":
-        st.session_state.history.append({"role": "system", "content": "_Verification code submitted._"})
-    elif card.card_type == "address_form":
+    # identity_verification and otp steps are always skipped (verified=True); no cases needed.
+    if card.card_type == "address_form":
         addr = submission
         st.session_state.history.append({
             "role": "user",
@@ -471,7 +468,7 @@ def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None
         "customer_id": st.session_state.customer_id,
         "thread_id": st.session_state.thread_id,
         "messages": [{"role": "user", "content": user_text}],
-        "verified": bool(values.get("verified")),
+        "verified": True,  # user is already authenticated; skip identity/OTP steps
         "collected_data": {},
         "current_step_idx": 0,
         "plan_complete": False,
