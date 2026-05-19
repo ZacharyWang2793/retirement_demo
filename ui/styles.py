@@ -16,41 +16,58 @@ import streamlit as st
 _CSS = """
 <style>
 :root {
-  --rs-primary: #2563EB; --rs-primary-700: #1D4ED8; --rs-primary-50: #EFF6FF;
-  --rs-success: #15803D; --rs-success-bg: #DCFCE7;
-  --rs-warning: #B45309; --rs-warning-bg: #FEF3C7;
-  --rs-danger:  #B91C1C; --rs-danger-bg:  #FEE2E2;
-  --rs-info:    #1D4ED8; --rs-info-bg:    #DBEAFE;
-  --rs-ink: #0F172A; --rs-ink-2: #475569; --rs-ink-3: #94A3B8;
-  --rs-surface: #FFFFFF; --rs-surface-2: #F8FAFC; --rs-surface-3: #F1F5F9;
-  --rs-border: #E2E8F0; --rs-border-strong: #CBD5E1;
-  --rs-radius: 16px; --rs-radius-sm: 10px; --rs-radius-pill: 9999px;
-  --rs-shadow: 0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.06);
-  --rs-shadow-lg: 0 8px 24px rgba(15,23,42,.06), 0 2px 8px rgba(15,23,42,.04);
+  /* Brand palette */
+  --rs-primary:     #1E7FD8;
+  --rs-primary-dk:  #1668B8;
+  --rs-primary-lt:  #EAF4FD;
+  --rs-yellow:      #FFD600;
+  --rs-yellow-lt:   #FDFFD0;
+  --rs-yellow-dk:   #C9A800;
 
-  /* Dark sidebar palette */
-  --rs-dark: #0B1220; --rs-dark-2: #131C2E; --rs-dark-3: #1E293B;
-  --rs-dark-ink: #F1F5F9; --rs-dark-ink-2: #94A3B8; --rs-dark-ink-3: #64748B;
-  --rs-dark-border: #1E293B;
+  /* Semantic status — keep conventional traffic-light */
+  --rs-success:    #15803D; --rs-success-bg: #DCFCE7;
+  --rs-warning:    #B45309; --rs-warning-bg: #FEF3C7;
+  --rs-danger:     #B91C1C; --rs-danger-bg:  #FEE2E2;
+  --rs-info:       #1E7FD8; --rs-info-bg:    #EAF4FD;
 
-  /* Pastel surfaces for asset/account cards */
-  --rs-pastel-violet: #F3E8FF; --rs-pastel-violet-ink: #6D28D9;
-  --rs-pastel-mint:   #D1FAE5; --rs-pastel-mint-ink:   #047857;
-  --rs-pastel-peach:  #FFEDD5; --rs-pastel-peach-ink:  #C2410C;
-  --rs-pastel-cream:  #FEF3C7; --rs-pastel-cream-ink:  #92400E;
-  --rs-pastel-sky:    #DBEAFE; --rs-pastel-sky-ink:    #1E40AF;
-  --rs-pastel-rose:   #FCE7F3; --rs-pastel-rose-ink:   #BE185D;
+  /* Ink scale */
+  --rs-ink:     #0F1523;
+  --rs-ink-2:   #5C5C6E;
+  --rs-ink-3:   #8A8AA0;
 
-  /* Page background: very soft mint */
-  --rs-page: #EFF6F4;
+  /* Surfaces */
+  --rs-surface:   #FFFFFF;
+  --rs-surface-2: #F8F9FA;
+  --rs-surface-3: #F1F2F5;
+
+  /* Borders */
+  --rs-border:        #C8C8D0;
+  --rs-border-strong: #A0A0B0;
+
+  /* Page: white */
+  --rs-page: #FFFFFF;
+
+  /* Geometry */
+  --rs-radius:      16px;
+  --rs-radius-sm:   10px;
+  --rs-radius-pill: 9999px;
+  --rs-shadow:      0 1px 2px rgba(15,21,35,.04), 0 1px 3px rgba(15,21,35,.06);
+  --rs-shadow-lg:   0 8px 24px rgba(15,21,35,.06), 0 2px 8px rgba(15,21,35,.04);
+
+  /* Dark sidebar */
+  --rs-dark:        #0F1523;
+  --rs-dark-2:      #1A2238;
+  --rs-dark-3:      #243050;
+  --rs-dark-ink:    #F1F5F9;
+  --rs-dark-ink-2:  #9AA5B4;
+  --rs-dark-ink-3:  #64748B;
+  --rs-dark-border: #243050;
 }
 
 /* ---------- Page chrome ---------- */
 .stApp {
     background: var(--rs-page);
 }
-/* Hide Streamlit's default top toolbar (Deploy button + hamburger) for a
-   fully branded surface. */
 [data-testid="stHeader"],
 [data-testid="stToolbar"],
 [data-testid="stDeployButton"],
@@ -94,23 +111,50 @@ header[data-testid="stHeader"] {
     transition: background-color .12s ease, border-color .12s ease, transform .04s ease;
 }
 .stButton button[kind="primary"], .stButton button[kind="primaryFormSubmit"] {
-    background: var(--rs-ink) !important;
-    border: 1px solid var(--rs-ink) !important;
+    background: var(--rs-primary) !important;
+    border: 1px solid var(--rs-primary) !important;
     color: #FFFFFF !important;
     font-weight: 600 !important;
 }
+.stButton button[kind="primary"] p,
+.stButton button[kind="primary"] span,
+.stButton button[kind="primary"] div,
+.stButton button[kind="primaryFormSubmit"] p,
+.stButton button[kind="primaryFormSubmit"] span,
+.stButton button[kind="primaryFormSubmit"] div {
+    color: #FFFFFF !important;
+}
 .stButton button[kind="primary"]:hover, .stButton button[kind="primaryFormSubmit"]:hover {
-    background: var(--rs-primary-700) !important;
-    border-color: var(--rs-primary-700) !important;
+    background: var(--rs-primary-dk) !important;
+    border-color: var(--rs-primary-dk) !important;
 }
 .stButton button[kind="secondary"], .stButton button[kind="secondaryFormSubmit"] {
     background: var(--rs-surface) !important;
     color: var(--rs-ink-2) !important;
     border: 1px solid var(--rs-border-strong) !important;
 }
+.stButton button[kind="secondary"] p,
+.stButton button[kind="secondary"] span,
+.stButton button[kind="secondary"] div,
+.stButton button[kind="secondaryFormSubmit"] p,
+.stButton button[kind="secondaryFormSubmit"] span,
+.stButton button[kind="secondaryFormSubmit"] div {
+    color: var(--rs-ink-2) !important;
+}
 .stButton button[kind="secondary"]:hover, .stButton button[kind="secondaryFormSubmit"]:hover {
     background: var(--rs-surface-2) !important;
     color: var(--rs-ink) !important;
+}
+/* Default (no kind) buttons */
+.stButton button:not([kind]) {
+    background: var(--rs-surface) !important;
+    color: var(--rs-ink-2) !important;
+    border: 1px solid var(--rs-border-strong) !important;
+}
+.stButton button:not([kind]) p,
+.stButton button:not([kind]) span,
+.stButton button:not([kind]) div {
+    color: var(--rs-ink-2) !important;
 }
 
 /* ---------- Banners ---------- */
@@ -142,15 +186,19 @@ div[data-testid="stNotification"][kind="error"] {
     background-color: var(--rs-ink) !important;
     color: #FFFFFF !important;
 }
-[data-testid="stChatMessageAvatarAssistant"],
-[data-testid="chatAvatarIcon-assistant"] {
-    background-color: var(--rs-pastel-mint) !important;
-    color: var(--rs-pastel-mint-ink) !important;
-}
 [data-testid="stChatMessageAvatarUser"] svg,
 [data-testid="chatAvatarIcon-user"] svg { fill: #FFFFFF !important; }
+
+/* Assistant: cerulean circle — hide the default robot SVG */
+[data-testid="stChatMessageAvatarAssistant"],
+[data-testid="chatAvatarIcon-assistant"] {
+    background-color: var(--rs-primary) !important;
+    color: #FFFFFF !important;
+}
 [data-testid="stChatMessageAvatarAssistant"] svg,
-[data-testid="chatAvatarIcon-assistant"] svg { fill: var(--rs-pastel-mint-ink) !important; }
+[data-testid="chatAvatarIcon-assistant"] svg {
+    display: none !important;
+}
 
 /* ---------- Custom card chrome (main column) ---------- */
 .rs-card-head {
@@ -159,7 +207,8 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-card-icon {
     width: 38px; height: 38px; border-radius: 12px;
-    background: var(--rs-pastel-mint); color: var(--rs-pastel-mint-ink);
+    background: rgba(30, 127, 216, 0.10);
+    color: var(--rs-primary);
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
 }
@@ -174,44 +223,47 @@ div[data-testid="stNotification"][kind="error"] {
     margin: 8px 0 14px 0;
 }
 .rs-chip-row .stButton button {
-    background: var(--rs-pastel-mint) !important;
-    border: 1px solid transparent !important;
-    color: var(--rs-pastel-mint-ink) !important;
+    background: var(--rs-yellow-lt) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    color: var(--rs-ink) !important;
     border-radius: var(--rs-radius-pill) !important;
     padding: 10px 14px !important;
     font-size: 13px !important;
     font-weight: 600 !important;
-    min-height: 56px !important;          /* equal height across chips */
+    min-height: 56px !important;
     height: 56px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
-    white-space: nowrap !important;       /* keep labels on one line */
+    white-space: nowrap !important;
     line-height: 1.2 !important;
 }
 .rs-chip-row .stButton button p,
 .rs-chip-row .stButton button div {
     margin: 0 !important;
     line-height: 1.2 !important;
+    color: var(--rs-ink) !important;
 }
 .rs-chip-row .stButton button:hover {
-    background: var(--rs-pastel-mint-ink) !important;
-    color: #FFFFFF !important;
+    background: var(--rs-yellow) !important;
+    border-color: var(--rs-yellow-dk) !important;
+    color: var(--rs-ink) !important;
 }
 .rs-chip-row .stButton button:hover p,
 .rs-chip-row .stButton button:hover div {
-    color: #FFFFFF !important;
+    color: var(--rs-ink) !important;
 }
 
 /* ---------- Hero metric (balance, RMD, loan quote) ---------- */
 .rs-hero {
-    background: var(--rs-pastel-mint);
+    background: var(--rs-primary-lt);
+    border: 1px solid rgba(30, 127, 216, 0.15);
     border-radius: var(--rs-radius);
     padding: 18px 20px;
     margin: 4px 0 12px 0;
 }
 .rs-hero-label {
-    font-size: 12px; color: var(--rs-pastel-mint-ink);
+    font-size: 12px; color: var(--rs-primary);
     text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;
 }
 .rs-hero-metric {
@@ -227,20 +279,21 @@ div[data-testid="stNotification"][kind="error"] {
     gap: 12px; margin-top: 10px;
 }
 .rs-account-card {
-    border: none; border-radius: var(--rs-radius);
+    border: 1px solid var(--rs-border);
+    border-left: 3px solid var(--rs-primary);
+    border-radius: var(--rs-radius-sm);
     padding: 14px 16px;
-    background: var(--rs-pastel-violet);
-    color: var(--rs-pastel-violet-ink);
+    background: var(--rs-surface);
 }
-.rs-account-card:nth-child(2n) { background: var(--rs-pastel-peach); color: var(--rs-pastel-peach-ink); }
-.rs-account-card:nth-child(3n) { background: var(--rs-pastel-sky);    color: var(--rs-pastel-sky-ink); }
-.rs-account-card:nth-child(4n) { background: var(--rs-pastel-cream);  color: var(--rs-pastel-cream-ink); }
-.rs-account-card:nth-child(5n) { background: var(--rs-pastel-rose);   color: var(--rs-pastel-rose-ink); }
+.rs-account-card:nth-child(even) {
+    background: var(--rs-surface-2);
+    border-left-color: var(--rs-ink-2);
+}
 
-.rs-account-plan { font-size: 14px; font-weight: 700; color: inherit; }
+.rs-account-plan { font-size: 14px; font-weight: 700; color: var(--rs-ink); }
 .rs-account-tag {
     display: inline-block; font-size: 10px; font-weight: 700;
-    color: inherit; background: rgba(255,255,255,0.55);
+    color: var(--rs-primary); background: var(--rs-primary-lt);
     padding: 2px 8px; border-radius: var(--rs-radius-pill); margin-top: 6px;
     text-transform: uppercase; letter-spacing: 0.05em;
 }
@@ -355,11 +408,11 @@ div[data-testid="stNotification"][kind="error"] {
     color: var(--rs-dark-ink) !important;
     border-color: var(--rs-dark-3) !important;
 }
-/* Primary CTA — bright cream with deep-burnt text so it pops on the dark sidebar */
+/* Primary CTA — yellow with near-black text so it pops on the dark sidebar */
 [data-testid="stSidebar"] .stButton button[kind="primary"] {
-    background: var(--rs-pastel-cream) !important;
-    color: var(--rs-pastel-cream-ink) !important;
-    border: 1px solid var(--rs-pastel-cream-ink) !important;
+    background: var(--rs-yellow) !important;
+    color: var(--rs-ink) !important;
+    border: 1px solid var(--rs-yellow-dk) !important;
     border-radius: var(--rs-radius-pill) !important;
     font-weight: 800 !important;
     text-align: center !important;
@@ -368,17 +421,17 @@ div[data-testid="stNotification"][kind="error"] {
 [data-testid="stSidebar"] .stButton button[kind="primary"] p,
 [data-testid="stSidebar"] .stButton button[kind="primary"] span,
 [data-testid="stSidebar"] .stButton button[kind="primary"] div {
-    color: var(--rs-pastel-cream-ink) !important;
+    color: var(--rs-ink) !important;
     font-weight: 800 !important;
 }
 [data-testid="stSidebar"] .stButton button[kind="primary"]:hover {
-    background: var(--rs-pastel-cream-ink) !important;
-    border-color: var(--rs-pastel-cream-ink) !important;
+    background: var(--rs-yellow-dk) !important;
+    border-color: var(--rs-yellow-dk) !important;
 }
 [data-testid="stSidebar"] .stButton button[kind="primary"]:hover p,
 [data-testid="stSidebar"] .stButton button[kind="primary"]:hover span,
 [data-testid="stSidebar"] .stButton button[kind="primary"]:hover div {
-    color: #FFFFFF !important;
+    color: var(--rs-ink) !important;
 }
 
 /* Brand mark in sidebar */
@@ -388,10 +441,10 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-brand-logo {
     width: 38px; height: 38px; border-radius: 11px;
-    background: var(--rs-pastel-mint); color: var(--rs-pastel-mint-ink);
+    background: var(--rs-primary); color: #FFFFFF;
     display: inline-flex; align-items: center; justify-content: center;
 }
-.rs-brand-logo .material-symbols-outlined { font-size: 22px; }
+.rs-brand-logo .material-symbols-outlined { font-size: 22px; color: #FFFFFF; }
 .rs-brand-name { font-size: 18px; font-weight: 700; color: var(--rs-dark-ink); letter-spacing: -0.01em; }
 .rs-brand-tag { font-size: 10px; color: var(--rs-dark-ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
 
@@ -405,7 +458,7 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-profile-avatar {
     width: 32px; height: 32px; border-radius: 50%;
-    background: var(--rs-pastel-violet); color: var(--rs-pastel-violet-ink);
+    background: var(--rs-primary); color: #FFFFFF;
     display: inline-flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 13px;
 }
@@ -433,9 +486,9 @@ div[data-testid="stNotification"][kind="error"] {
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 10px; font-weight: 700;
     padding: 3px 9px; border-radius: var(--rs-radius-pill);
-    background: var(--rs-pastel-mint); color: var(--rs-pastel-mint-ink);
+    background: rgba(30, 127, 216, 0.25); color: var(--rs-dark-ink);
 }
-.rs-snap-pill.alt { background: var(--rs-pastel-violet); color: var(--rs-pastel-violet-ink); }
+.rs-snap-pill.alt { background: rgba(255, 214, 0, 0.25); color: var(--rs-dark-ink); }
 
 /* Section labels in sidebar */
 .rs-section-label {
@@ -484,8 +537,8 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-contact-line .material-symbols-outlined { font-size: 16px; color: var(--rs-dark-ink-3); }
 .rs-security-badge {
     display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10px; font-weight: 700; color: var(--rs-pastel-mint-ink);
-    background: var(--rs-pastel-mint); padding: 3px 9px;
+    font-size: 10px; font-weight: 700; color: var(--rs-dark-ink);
+    background: rgba(255, 214, 0, 0.25); padding: 3px 9px;
     border-radius: var(--rs-radius-pill); margin-top: 8px;
     text-transform: uppercase; letter-spacing: 0.05em;
 }
@@ -512,7 +565,7 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-header-pill .rs-pill-avatar {
     width: 28px; height: 28px; border-radius: 50%;
-    background: var(--rs-pastel-violet); color: var(--rs-pastel-violet-ink);
+    background: var(--rs-primary); color: #FFFFFF;
     display: inline-flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 12px;
 }

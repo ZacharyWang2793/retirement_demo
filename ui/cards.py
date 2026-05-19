@@ -145,8 +145,24 @@ def _submit_cancel_row(submit_label: str) -> tuple[bool, bool]:
     return submitted, cancelled
 
 
-def render_card(card: Card, key: str) -> dict[str, Any] | None:
-    """Dispatch to the right per-card renderer."""
+# Card types whose renderers accept a `readonly` parameter.
+# In readonly mode the card body is shown but interactive buttons are suppressed —
+# used when re-displaying dismissed terminal cards in the chat history.
+_READONLY_CAPABLE: frozenset[str] = frozenset({
+    "balance_view", "transaction_history", "loan_status", "request_list",
+    "document_link", "success", "specialist_routing", "password_reset_link",
+    "not_implemented", "rmd_amount", "loan_quote", "drift_view",
+})
+
+
+def render_card(card: Card, key: str, readonly: bool = False) -> dict[str, Any] | None:
+    """Dispatch to the right per-card renderer.
+
+    When `readonly=True` the card is rendered without interactive buttons — used
+    for re-displaying previously-dismissed terminal cards in the chat history.
+    Only card types in `_READONLY_CAPABLE` support this flag; passing it to
+    interactive form cards has no effect (they return None regardless).
+    """
     dispatch = {
         "identity_verification": _render_identity,
         "otp": _render_otp,
@@ -186,7 +202,15 @@ def render_card(card: Card, key: str) -> dict[str, Any] | None:
         "qdro_form": _render_qdro,
         "specialist_routing": _render_specialist_routing,
     }
-    return dispatch[card.card_type](card, key)
+    fn = dispatch[card.card_type]
+    if readonly and card.card_type in _READONLY_CAPABLE:
+        return fn(card, key, readonly=True)  # type: ignore[call-arg]
+    return fn(card, key)
+
+
+def render_card_readonly(card: Card, key: str) -> None:
+    """Render a terminal card without interactive buttons, for history display."""
+    render_card(card, key, readonly=True)
 
 
 # ---------- identity / otp ----------
@@ -508,7 +532,7 @@ def _render_allocation(card: AllocationFormCard, key: str) -> dict[str, Any] | N
     return None
 
 
-def _render_drift(card: DriftViewCard, key: str) -> dict[str, Any] | None:
+def _render_drift(card: DriftViewCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -527,18 +551,19 @@ def _render_drift(card: DriftViewCard, key: str) -> dict[str, Any] | None:
                     "</div>"
                 )
             st.markdown(f'<div class="rs-txn-list">{rows_html}</div>', unsafe_allow_html=True)
-            with st.form(key, clear_on_submit=False):
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {"_confirmed": True}
+            if not readonly:
+                with st.form(key, clear_on_submit=False):
+                    submitted, cancelled = _submit_cancel_row(card.submit_label)
+                if cancelled:
+                    return {"_cancelled": True}
+                if submitted:
+                    return {"_confirmed": True}
     return None
 
 
 # ---------- read-only views ----------
 
-def _render_balance(card: BalanceViewCard, key: str) -> dict[str, Any] | None:
+def _render_balance(card: BalanceViewCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -566,41 +591,46 @@ def _render_balance(card: BalanceViewCard, key: str) -> dict[str, Any] | None:
                 for a in card.accounts
             )
             st.markdown(f'<div class="rs-account-grid">{cards_html}</div>', unsafe_allow_html=True)
-            st.write("")
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                st.write("")
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
-def _render_transaction_history(card: TransactionHistoryCard, key: str) -> dict[str, Any] | None:
+def _render_transaction_history(card: TransactionHistoryCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
             if not card.transactions:
                 st.info("No recent transactions on file.")
             else:
-                # Filter chips via session state
-                filter_key = f"{key}-filter"
-                if filter_key not in st.session_state:
-                    st.session_state[filter_key] = "all"
-                filters = ["all", "contribution", "distribution", "dividend", "fee"]
-                st.markdown('<div class="rs-txn-filter-row">', unsafe_allow_html=True)
-                cols = st.columns(len(filters))
-                for i, f in enumerate(filters):
-                    with cols[i]:
-                        if st.button(
-                            f.capitalize() if f != "all" else "All",
-                            key=f"{key}-flt-{f}",
-                            use_container_width=True,
-                        ):
-                            st.session_state[filter_key] = f
-                st.markdown('</div>', unsafe_allow_html=True)
-                active = st.session_state[filter_key]
+                if readonly:
+                    # In history: show all transactions, no filter controls
+                    active = "all"
+                else:
+                    # Filter chips via session state
+                    filter_key = f"{key}-filter"
+                    if filter_key not in st.session_state:
+                        st.session_state[filter_key] = "all"
+                    filters = ["all", "contribution", "distribution", "dividend", "fee"]
+                    st.markdown('<div class="rs-txn-filter-row">', unsafe_allow_html=True)
+                    cols = st.columns(len(filters))
+                    for i, f in enumerate(filters):
+                        with cols[i]:
+                            if st.button(
+                                f.capitalize() if f != "all" else "All",
+                                key=f"{key}-flt-{f}",
+                                use_container_width=True,
+                            ):
+                                st.session_state[filter_key] = f
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    active = st.session_state[filter_key]
                 visible = [
                     t for t in card.transactions
                     if active == "all" or t["txn_type"] == active
                 ]
-                if not visible:
+                if not visible and not readonly:
                     st.caption(f"No '{active}' transactions in the last {len(card.transactions)} entries.")
                 rows_html = ""
                 for t in visible:
@@ -617,19 +647,21 @@ def _render_transaction_history(card: TransactionHistoryCard, key: str) -> dict[
                         "</div>"
                     )
                 st.markdown(f'<div class="rs-txn-list">{rows_html}</div>', unsafe_allow_html=True)
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
-def _render_request_list(card: RequestListCard, key: str) -> dict[str, Any] | None:
+def _render_request_list(card: RequestListCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
             if not card.requests:
                 st.info("You don't have any recent requests on file.")
-                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                    return {"_acknowledged": True}
+                if not readonly:
+                    if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                        return {"_acknowledged": True}
                 return None
             # Render rows
             rows_html = ""
@@ -644,34 +676,35 @@ def _render_request_list(card: RequestListCard, key: str) -> dict[str, Any] | No
                 )
             st.markdown(rows_html, unsafe_allow_html=True)
 
-            if card.selectable:
-                pending = [r for r in card.requests if r["status"] == "pending"]
-                if not pending:
-                    st.caption("No pending requests are eligible for cancellation.")
-                    if st.button("Done", key=f"{key}-done", type="primary"):
+            if not readonly:
+                if card.selectable:
+                    pending = [r for r in card.requests if r["status"] == "pending"]
+                    if not pending:
+                        st.caption("No pending requests are eligible for cancellation.")
+                        if st.button("Done", key=f"{key}-done", type="primary"):
+                            return {"_acknowledged": True}
+                        return None
+                    with st.form(key, clear_on_submit=False):
+                        pick = st.selectbox(
+                            "Select a pending request to cancel",
+                            options=[r["id"] for r in pending],
+                            format_func=lambda rid: next(
+                                f"{r['type'].replace('_', ' ').title()} · {r['created_at'][:10]} · #{r['id']}"
+                                for r in pending if r["id"] == rid
+                            ),
+                        )
+                        submitted, cancelled = _submit_cancel_row(card.submit_label)
+                    if cancelled:
+                        return {"_cancelled": True}
+                    if submitted:
+                        return {"request_id": pick}
+                else:
+                    if st.button(card.submit_label, key=f"{key}-done", type="primary"):
                         return {"_acknowledged": True}
-                    return None
-                with st.form(key, clear_on_submit=False):
-                    pick = st.selectbox(
-                        "Select a pending request to cancel",
-                        options=[r["id"] for r in pending],
-                        format_func=lambda rid: next(
-                            f"{r['type'].replace('_', ' ').title()} · {r['created_at'][:10]} · #{r['id']}"
-                            for r in pending if r["id"] == rid
-                        ),
-                    )
-                    submitted, cancelled = _submit_cancel_row(card.submit_label)
-                if cancelled:
-                    return {"_cancelled": True}
-                if submitted:
-                    return {"request_id": pick}
-            else:
-                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                    return {"_acknowledged": True}
     return None
 
 
-def _render_document_link(card: DocumentLinkCard, key: str) -> dict[str, Any] | None:
+def _render_document_link(card: DocumentLinkCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -681,8 +714,9 @@ def _render_document_link(card: DocumentLinkCard, key: str) -> dict[str, Any] | 
                 f"**Generated:** {html.escape(card.generated_at)}"
             )
             st.caption("In production, this card would render a signed download link.")
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
@@ -826,7 +860,7 @@ def _render_microdeposit(card: MicroDepositCard, key: str) -> dict[str, Any] | N
 
 # ---------- distributions / loans ----------
 
-def _render_rmd_amount(card: RmdAmountCard, key: str) -> dict[str, Any] | None:
+def _render_rmd_amount(card: RmdAmountCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -840,12 +874,13 @@ def _render_rmd_amount(card: RmdAmountCard, key: str) -> dict[str, Any] | None:
                 """,
                 unsafe_allow_html=True,
             )
-            with st.form(key, clear_on_submit=False):
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {"_acknowledged": True}
+            if not readonly:
+                with st.form(key, clear_on_submit=False):
+                    submitted, cancelled = _submit_cancel_row(card.submit_label)
+                if cancelled:
+                    return {"_cancelled": True}
+                if submitted:
+                    return {"_acknowledged": True}
     return None
 
 
@@ -911,7 +946,7 @@ def _render_distribution_request(card: DistributionRequestFormCard, key: str) ->
     return None
 
 
-def _render_loan_quote(card: LoanQuoteCard, key: str) -> dict[str, Any] | None:
+def _render_loan_quote(card: LoanQuoteCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -925,12 +960,13 @@ def _render_loan_quote(card: LoanQuoteCard, key: str) -> dict[str, Any] | None:
                 """,
                 unsafe_allow_html=True,
             )
-            with st.form(key, clear_on_submit=False):
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {"_acknowledged": True}
+            if not readonly:
+                with st.form(key, clear_on_submit=False):
+                    submitted, cancelled = _submit_cancel_row(card.submit_label)
+                if cancelled:
+                    return {"_cancelled": True}
+                if submitted:
+                    return {"_acknowledged": True}
     return None
 
 
@@ -965,7 +1001,7 @@ def _render_loan_request(card: LoanRequestFormCard, key: str) -> dict[str, Any] 
     return None
 
 
-def _render_loan_status(card: LoanStatusCard, key: str) -> dict[str, Any] | None:
+def _render_loan_status(card: LoanStatusCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -987,8 +1023,9 @@ def _render_loan_status(card: LoanStatusCard, key: str) -> dict[str, Any] | None
                         """,
                         unsafe_allow_html=True,
                     )
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
@@ -1095,7 +1132,7 @@ def _render_delivery_prefs(card: DeliveryPrefsFormCard, key: str) -> dict[str, A
     return None
 
 
-def _render_password_reset_link(card: PasswordResetLinkCard, key: str) -> dict[str, Any] | None:
+def _render_password_reset_link(card: PasswordResetLinkCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -1104,8 +1141,9 @@ def _render_password_reset_link(card: PasswordResetLinkCard, key: str) -> dict[s
                 "The link expires in 30 minutes. If you don't receive it, check your spam folder or "
                 "call us at 1-800-555-7483."
             )
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
@@ -1246,7 +1284,7 @@ def _render_qdro(card: QdroIntakeFormCard, key: str) -> dict[str, Any] | None:
     return None
 
 
-def _render_specialist_routing(card: SpecialistRoutingCard, key: str) -> dict[str, Any] | None:
+def _render_specialist_routing(card: SpecialistRoutingCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -1259,8 +1297,9 @@ def _render_specialist_routing(card: SpecialistRoutingCard, key: str) -> dict[st
                 f"**Questions?** Call us at **{html.escape(card.contact_phone)}** "
                 "and reference this confirmation number."
             )
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
@@ -1284,7 +1323,7 @@ def _render_confirmation(card: ConfirmationCard, key: str) -> dict[str, Any] | N
     return None
 
 
-def _render_success(card: SuccessCard, key: str) -> dict[str, Any] | None:
+def _render_success(card: SuccessCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -1293,12 +1332,13 @@ def _render_success(card: SuccessCard, key: str) -> dict[str, Any] | None:
                 st.write(line)
             if card.request_id:
                 st.caption(f"Confirmation #{card.request_id}")
-            if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None
 
 
-def _render_not_implemented(card: NotImplementedCard, key: str) -> dict[str, Any] | None:
+def _render_not_implemented(card: NotImplementedCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
@@ -1310,6 +1350,7 @@ def _render_not_implemented(card: NotImplementedCard, key: str) -> dict[str, Any
                 st.write("**Typical steps for this transaction:**")
                 for step in card.next_steps:
                     st.write(f"- {step}")
-            if st.button(card.submit_label, key=f"{key}-done"):
-                return {"_acknowledged": True}
+            if not readonly:
+                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
+                    return {"_acknowledged": True}
     return None

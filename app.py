@@ -417,51 +417,22 @@ def _archive_card_summary(card, submission: dict[str, Any]) -> None:
             })
 
 
-def _archive_terminal_card(card) -> None:
-    """Add a one-line breadcrumb for a dismissed terminal card."""
-    if card.card_type == "balance_view":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Total balance: **${card.total_balance:,.2f}** (vested ${card.vested_balance:,.2f})",
-        })
-    elif card.card_type == "transaction_history":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Showed {len(card.transactions)} recent transactions.",
-        })
-    elif card.card_type == "loan_status":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Showed {len(card.loans)} loan(s).",
-        })
-    elif card.card_type == "request_list":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Showed {len(card.requests)} recent request(s).",
-        })
-    elif card.card_type == "document_link":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Document ready: {card.kind.replace('_', ' ')} ({card.period}).",
-        })
-    elif card.card_type == "success":
-        rid = f" (#{card.request_id})" if card.request_id else ""
-        st.session_state.history.append({"role": "assistant", "content": f"{card.title}{rid}"})
-    elif card.card_type == "specialist_routing":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Routed to specialist (#{card.request_id}) · ETA {card.eta_business_days} business days.",
-        })
-    elif card.card_type == "password_reset_link":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"Password reset link sent to {card.email_masked}.",
-        })
-    elif card.card_type == "not_implemented":
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": f"**{card.intent}** is not available through self-service at this time.",
-        })
+def _store_card_in_history(card) -> None:
+    """Persist a dismissed terminal card into session history as a serialised spec.
+
+    The chat-history renderer detects entries with role='card' and re-renders
+    them via `render_card_readonly`, so the full card UI stays visible in the
+    scroll instead of degrading to a plain-text breadcrumb.
+    """
+    try:
+        card_data = card.model_dump()
+    except Exception:
+        return  # Graceful fallback: skip cards that can't serialise
+    st.session_state.history.append({
+        "role": "card",
+        "card_type": card.card_type,
+        "card_data": card_data,
+    })
 
 
 def _clear_terminal_state() -> None:
@@ -537,7 +508,7 @@ elif values.get("final_card") is not None:
     card_key = f"card-{st.session_state.thread_id}-final-{values.get('intent')}"
     submitted = render_card(final_card, key=card_key)
     if submitted is not None:
-        _archive_terminal_card(final_card)
+        _store_card_in_history(final_card)
         _clear_terminal_state()
         st.rerun()
 

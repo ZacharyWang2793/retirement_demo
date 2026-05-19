@@ -7,9 +7,24 @@ import streamlit as st
 
 
 def render_chat_history(history: list[dict[str, Any]]) -> None:
-    for msg in history:
+    # Import here to avoid circular imports at module load time.
+    from ui.card_models import _TYPE_TO_CLS
+    from ui.cards import render_card_readonly
+
+    for i, msg in enumerate(history):
         role = msg.get("role", "assistant")
-        if role == "user":
+        if role == "card":
+            # Re-render a previously dismissed terminal card as read-only.
+            card_type = msg.get("card_type")
+            card_data = msg.get("card_data") or {}
+            cls = _TYPE_TO_CLS.get(card_type)
+            if cls:
+                try:
+                    card = cls(**card_data)
+                    render_card_readonly(card, key=f"hist-card-{i}-{card_type}")
+                except Exception:
+                    pass  # Silently skip malformed history entries
+        elif role == "user":
             with st.chat_message("user"):
                 st.write(msg["content"])
         elif role == "assistant":
