@@ -527,11 +527,15 @@ div[data-testid="stNotification"][kind="error"] {
 
 
 def inject_global_css() -> None:
-    """Inject the brand stylesheet once per session."""
-    if st.session_state.get("_rs_css_injected"):
-        return
+    """Inject the brand stylesheet.
+
+    Must run on EVERY rerun. Streamlit drops any DOM element that the current
+    run didn't produce, so a once-per-session guard would cause the page to
+    lose its styling (and the Material Symbols font <link>) the moment a
+    spinner or rerun fires after the first render. The `st.markdown` call is
+    idempotent — Streamlit dedupes identical content cheaply.
+    """
     st.markdown(_CSS, unsafe_allow_html=True)
-    st.session_state["_rs_css_injected"] = True
 
 
 def icon_html(name: str, size: int = 18) -> str:
