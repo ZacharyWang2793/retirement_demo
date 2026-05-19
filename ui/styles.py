@@ -49,6 +49,19 @@ _CSS = """
 .stApp {
     background: var(--rs-page);
 }
+/* Hide Streamlit's default top toolbar (Deploy button + hamburger) for a
+   fully branded surface. */
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stDeployButton"],
+#MainMenu,
+header[data-testid="stHeader"] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+}
+.stApp > header { display: none !important; height: 0 !important; }
+
 .main .block-container {
     background: var(--rs-surface);
     border-radius: 24px;
@@ -165,12 +178,28 @@ div[data-testid="stNotification"][kind="error"] {
     border: 1px solid transparent !important;
     color: var(--rs-pastel-mint-ink) !important;
     border-radius: var(--rs-radius-pill) !important;
-    padding: 6px 14px !important;
+    padding: 10px 14px !important;
     font-size: 13px !important;
     font-weight: 600 !important;
+    min-height: 56px !important;          /* equal height across chips */
+    height: 56px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    white-space: nowrap !important;       /* keep labels on one line */
+    line-height: 1.2 !important;
+}
+.rs-chip-row .stButton button p,
+.rs-chip-row .stButton button div {
+    margin: 0 !important;
+    line-height: 1.2 !important;
 }
 .rs-chip-row .stButton button:hover {
     background: var(--rs-pastel-mint-ink) !important;
+    color: #FFFFFF !important;
+}
+.rs-chip-row .stButton button:hover p,
+.rs-chip-row .stButton button:hover div {
     color: #FFFFFF !important;
 }
 

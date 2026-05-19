@@ -31,7 +31,7 @@ load_dotenv()
 # ---------- page setup ----------
 
 st.set_page_config(
-    page_title="RetireSafe — Account Support",
+    page_title="Meridian Retirement — Account Support",
     page_icon=":material/savings:",
     layout="centered",
 )
@@ -147,8 +147,8 @@ with st.sidebar:
         <div class="rs-brand-mark">
           <span class="rs-brand-logo">{icon_html("savings", size=22)}</span>
           <div>
-            <div class="rs-brand-name">RetireSafe</div>
-            <div class="rs-brand-tag">Secure account support</div>
+            <div class="rs-brand-name">Meridian Retirement</div>
+            <div class="rs-brand-tag">Plan participant services</div>
           </div>
         </div>
         """,
@@ -549,20 +549,6 @@ if not st.session_state.history and not is_paused and values.get("final_card") i
     if chip:
         st.session_state.pending_prompt = chip
         st.rerun()
-
-
-# ---------- compliance footer ----------
-
-st.markdown(
-    """
-    <div class="rs-footer">
-      RetireSafe is a fictional demo. Not affiliated with any real plan provider.
-      Mocked data for demonstration only. Investments carry risk; consult a licensed
-      advisor before taking distributions, loans, or rollovers.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # ---------- chat input ----------

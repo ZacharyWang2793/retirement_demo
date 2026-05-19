@@ -21,10 +21,10 @@ def render_chat_history(history: list[dict[str, Any]]) -> None:
 
 
 _CHIPS: list[tuple[str, str]] = [
-    ("Check my balance", "What's my balance?"),
-    ("Show recent transactions", "Show my recent transactions"),
-    ("Update my address", "I want to change my address"),
-    ("Add a beneficiary", "Add a beneficiary"),
+    ("Check balance", "What's my balance?"),
+    ("View transactions", "Show my recent transactions"),
+    ("Update address", "I want to change my address"),
+    ("Add beneficiary", "Add a beneficiary"),
 ]
 
 
