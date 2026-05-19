@@ -264,11 +264,11 @@ with st.sidebar:
 
 if c:
     st.markdown(
-        f'<h1 style="margin:0 0 4px 0;">Greetings, {html.escape(c["first_name"])}</h1>',
+        f'<h1 style="margin:0 0 4px 0;text-align:center;">Greetings, {html.escape(c["first_name"])}</h1>',
         unsafe_allow_html=True,
     )
 else:
-    st.title("Greetings")
+    st.markdown('<h1 style="margin:0 0 4px 0;text-align:center;">Greetings</h1>', unsafe_allow_html=True)
 
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
