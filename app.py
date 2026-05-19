@@ -98,6 +98,12 @@ def _group_conversations(convs: list[dict[str, Any]]) -> list[tuple[str, list[di
     return [(k, groups[k]) for k in order]
 
 
+def _bust_sidebar_cache() -> None:
+    """Drop cached customer/balance so they refresh on the next rerun after a mutation."""
+    st.session_state.pop("cached_customer", None)
+    st.session_state.pop("cached_balance", None)
+
+
 def _archive_current_conversation() -> None:
     """Snapshot the active thread into the conversations list (if it has any history)."""
     history = st.session_state.get("history") or []
@@ -128,6 +134,7 @@ def _new_session(persist: bool = True) -> None:
     st.session_state.history = []
     st.session_state.started_at = _now_iso()
     st.session_state.pending_prompt = None
+    _bust_sidebar_cache()
 
 
 def _switch_to_conversation(thread_id: str) -> None:
@@ -160,10 +167,17 @@ if "started_at" not in st.session_state:
     st.session_state.started_at = _now_iso()
 
 
-# ---------- customer + account snapshot ----------
+# ---------- customer + account snapshot (cached per session) ----------
 
-c = repo.get_customer(st.session_state.customer_id)
-balance = repo.get_balance_summary(st.session_state.customer_id) if c else None
+if "cached_customer" not in st.session_state:
+    st.session_state.cached_customer = repo.get_customer(st.session_state.customer_id)
+if "cached_balance" not in st.session_state:
+    _cust = st.session_state.cached_customer
+    st.session_state.cached_balance = (
+        repo.get_balance_summary(st.session_state.customer_id) if _cust else None
+    )
+c = st.session_state.cached_customer
+balance = st.session_state.cached_balance
 
 
 # ---------- sidebar ----------
@@ -446,6 +460,58 @@ def _clear_terminal_state() -> None:
             "collected_data": {},
         },
     )
+    _bust_sidebar_cache()  # balance may have changed if a transaction was persisted
+
+
+def _run_pending_turn(pt: dict[str, Any]) -> None:
+    """Execute a deferred graph turn with a typing indicator in the chat thread.
+
+    Called on the rerun *after* the user message has already been appended to
+    history and rendered, so the user sees their bubble instantly.  The typing
+    indicator is written to an st.empty() placeholder before _absorb_run blocks;
+    Streamlit flushes the render tree to the browser when the spinner activates,
+    so the dots are visible throughout graph execution.
+    """
+    user_text = pt["user_text"]
+    is_paused = pt["is_paused"]
+
+    # Typing indicator — appears while the graph runs below
+    typing_ph = st.empty()
+    with typing_ph:
+        with st.chat_message("assistant"):
+            st.markdown(
+                '<div class="rs-typing-indicator">'
+                '<div class="rs-typing-dot"></div>'
+                '<div class="rs-typing-dot"></div>'
+                '<div class="rs-typing-dot"></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+    if is_paused:
+        # Cancel the in-flight flow first; cancel signal lands cleanly via the validator.
+        for _ in graph.stream(Command(resume={"_cancelled": True}), config, stream_mode="values"):
+            pass
+        # Drop the cancel breadcrumb the validator adds — the user is mid-redirect, not done.
+        if st.session_state.history and st.session_state.history[-1].get("role") == "system":
+            st.session_state.history.pop()
+
+    payload = {
+        "customer_id": st.session_state.customer_id,
+        "thread_id": st.session_state.thread_id,
+        "messages": [{"role": "user", "content": user_text}],
+        "verified": True,  # user is already authenticated; skip identity/OTP steps
+        "collected_data": {},
+        "current_step_idx": 0,
+        "plan_complete": False,
+        "pending_card": None,
+        "final_card": None,
+        "final_message": None,
+        "last_error": None,
+        "last_submission": None,
+    }
+    _absorb_run(payload, spinner_label="Thinking...")
+    typing_ph.empty()
 
 
 def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None:
@@ -482,6 +548,17 @@ def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None
 # ---------- render history first ----------
 
 render_chat_history(st.session_state.history)
+
+
+# ---------- deferred turn: user message already rendered; now run the graph ----------
+# The chat-input and chip handlers append the user bubble to history and set
+# _pending_turn, then rerun immediately so the bubble appears < 5 ms after Enter.
+# On *this* rerun we see the bubble in render_chat_history above, then show the
+# typing indicator here while the graph executes synchronously below.
+
+if pt := st.session_state.pop("_pending_turn", None):
+    _run_pending_turn(pt)
+    st.rerun()
 
 
 # ---------- handle the current state of the graph ----------
@@ -522,13 +599,23 @@ if not st.session_state.history and not is_paused:
 # ---------- chat input ----------
 
 # Resolve any quick-action pending prompt set by the empty-state chip row.
+# Uses the same two-step pattern: append message now so it renders immediately,
+# then defer graph execution to the next rerun via _pending_turn.
 if st.session_state.pending_prompt:
     prompt = st.session_state.pending_prompt
     st.session_state.pending_prompt = None
-    _start_turn(prompt, is_paused, values)
+    st.session_state.history.append({"role": "user", "content": prompt})
+    st.session_state._pending_turn = {"user_text": prompt, "is_paused": False}
     st.rerun()
 
 user_text = st.chat_input("How can I help?")
 if user_text:
-    _start_turn(user_text, is_paused, values)
+    # Store any lingering terminal card before starting a new turn.
+    if values.get("final_card") is not None:
+        _store_card_in_history(values["final_card"])
+        _clear_terminal_state()
+    # Append message immediately — it renders on the very next rerun (< 5 ms).
+    # Graph execution is deferred to the rerun after that via _pending_turn.
+    st.session_state.history.append({"role": "user", "content": user_text})
+    st.session_state._pending_turn = {"user_text": user_text, "is_paused": is_paused}
     st.rerun()

@@ -589,6 +589,22 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-security-badge .material-symbols-outlined { font-size: 12px; }
 
+/* ---------- Typing indicator (three bouncing dots) ---------- */
+.rs-typing-indicator {
+    display: flex; gap: 5px; align-items: center; padding: 4px 2px;
+}
+.rs-typing-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--rs-ink-3);
+    animation: rs-bounce 1.2s infinite ease-in-out;
+}
+.rs-typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.rs-typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes rs-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+    30% { transform: translateY(-5px); opacity: 1; }
+}
+
 /* ---------- Compliance footer ---------- */
 .rs-footer {
     color: var(--rs-ink-3); font-size: 11px; line-height: 1.5;
