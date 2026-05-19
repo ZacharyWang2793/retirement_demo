@@ -224,7 +224,7 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-chip-row .stButton button {
     background: var(--rs-yellow-lt) !important;
-    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border: 1px solid var(--rs-yellow) !important;
     color: var(--rs-ink) !important;
     border-radius: var(--rs-radius-pill) !important;
     padding: 10px 14px !important;
@@ -256,14 +256,15 @@ div[data-testid="stNotification"][kind="error"] {
 
 /* ---------- Hero metric (balance, RMD, loan quote) ---------- */
 .rs-hero {
-    background: var(--rs-primary-lt);
-    border: 1px solid rgba(30, 127, 216, 0.15);
+    background: var(--rs-yellow-lt);
+    border: 1px solid rgba(201, 168, 0, 0.20);
+    border-left: 4px solid var(--rs-yellow);
     border-radius: var(--rs-radius);
     padding: 18px 20px;
     margin: 4px 0 12px 0;
 }
 .rs-hero-label {
-    font-size: 12px; color: var(--rs-primary);
+    font-size: 12px; color: var(--rs-yellow-dk);
     text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;
 }
 .rs-hero-metric {
@@ -286,8 +287,8 @@ div[data-testid="stNotification"][kind="error"] {
     background: var(--rs-surface);
 }
 .rs-account-card:nth-child(even) {
-    background: var(--rs-surface-2);
-    border-left-color: var(--rs-ink-2);
+    background: var(--rs-yellow-lt);
+    border-left-color: var(--rs-yellow);
 }
 
 .rs-account-plan { font-size: 14px; font-weight: 700; color: var(--rs-ink); }
@@ -468,7 +469,7 @@ div[data-testid="stNotification"][kind="error"] {
 }
 .rs-brand-logo .material-symbols-outlined { font-size: 22px; color: #FFFFFF; }
 .rs-brand-name { font-size: 18px; font-weight: 700; color: var(--rs-dark-ink); letter-spacing: -0.01em; }
-.rs-brand-tag { font-size: 10px; color: var(--rs-dark-ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.rs-brand-tag { font-size: 10px; color: var(--rs-yellow); text-transform: uppercase; letter-spacing: 0.08em; }
 
 /* Profile pill at top of sidebar — matches the reference's avatar-name-chevron pill */
 .rs-profile-pill {
@@ -491,6 +492,7 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-snap-card {
     background: var(--rs-dark-2);
     border-radius: var(--rs-radius);
+    border-left: 3px solid var(--rs-yellow);
     padding: 14px 16px;
     margin: 4px 0 14px 0;
 }
@@ -516,7 +518,9 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-section-label {
     font-size: 10px; color: var(--rs-dark-ink-3); font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.09em;
-    margin: 14px 0 8px 4px;
+    margin: 14px 0 8px 0;
+    border-left: 2px solid var(--rs-yellow);
+    padding-left: 8px;
 }
 
 /* Active / current conversation highlight */
