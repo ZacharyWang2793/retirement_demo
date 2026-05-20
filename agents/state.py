@@ -27,3 +27,4 @@ class AgentState(TypedDict, total=False):
     last_error: str | None
     final_message: str | None
     final_card: Card | None
+    proposed_intent: str | None       # intent proposed but not yet confirmed by user

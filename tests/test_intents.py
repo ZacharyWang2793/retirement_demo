@@ -2,7 +2,7 @@
 
 These tests exercise the graph by:
 1. Seeding a fresh DB
-2. Invoking the graph with a user message (regex-classified, so no API key needed)
+2. Invoking the graph with intent pre-set (bypasses agent_node, no API key needed)
 3. Reading state.values["pending_card"] to see what card is awaiting input
 4. Resuming with Command(resume=...) per step
 5. Asserting final DB state and final state.values
@@ -76,6 +76,7 @@ def test_check_balance_read_only():
         {
             "customer_id": "demo-001",
             "thread_id": tid,
+            "intent": "check_balance",
             "messages": [{"role": "user", "content": "what's my balance?"}],
             "verified": False,
             "collected_data": {},
@@ -110,6 +111,7 @@ def test_change_address_full_flow():
         {
             "customer_id": "demo-001",
             "thread_id": tid,
+            "intent": "change_address",
             "messages": [{"role": "user", "content": "I want to change my address"}],
             "verified": False,
             "collected_data": {},
@@ -181,6 +183,7 @@ def test_change_address_bad_identity_re_renders():
         {
             "customer_id": "demo-002",
             "thread_id": tid,
+            "intent": "change_address",
             "messages": [{"role": "user", "content": "change my address"}],
             "verified": False,
             "collected_data": {},
@@ -215,6 +218,7 @@ def test_add_beneficiary_full_flow():
         {
             "customer_id": "demo-003",
             "thread_id": tid,
+            "intent": "add_beneficiary",
             "messages": [{"role": "user", "content": "Add a beneficiary"}],
             "verified": False,
             "collected_data": {},
@@ -274,6 +278,7 @@ def test_rollover_out_routes_to_real_flow():
         {
             "customer_id": "demo-002",
             "thread_id": tid,
+            "intent": "rollover_out",
             "messages": [{"role": "user", "content": "I want to roll over my 401k to another plan"}],
             "verified": False,
             "collected_data": {},
@@ -302,6 +307,7 @@ def test_back_to_back_flows_same_thread():
         {
             "customer_id": "demo-002",
             "thread_id": tid,
+            "intent": "check_balance",
             "messages": [{"role": "user", "content": "what's my balance?"}],
             "verified": False,
             "collected_data": {},
@@ -318,6 +324,7 @@ def test_back_to_back_flows_same_thread():
         {
             "customer_id": "demo-002",
             "thread_id": tid,
+            "intent": "change_phone",
             "messages": [{"role": "user", "content": "change my phone number"}],
             "verified": False,
             "collected_data": {},
@@ -515,6 +522,7 @@ def test_cancel_during_address_change():
         {
             "customer_id": "demo-001",
             "thread_id": tid,
+            "intent": "change_address",
             "messages": [{"role": "user", "content": "change my address"}],
             "verified": False,
             "collected_data": {},

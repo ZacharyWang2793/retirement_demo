@@ -25,16 +25,38 @@ from langgraph.types import interrupt
 
 load_dotenv()
 
+import re as _re
+
 from agents.intents import (
     INTENT_LABELS,
     INTENT_PLANS,
     INTENT_SUCCESS_MESSAGES,
     INTENTS,
-    regex_classify,
 )
 from agents.prompts import AGENT_SYSTEM_PROMPT
 from agents.state import AgentState
 from db.repository import Repository
+
+
+# ---------- confirmation detection helpers ----------
+
+_CONFIRM_RE = _re.compile(
+    r"\b(yes|yeah|yep|sure|ok|okay|go\s+ahead|proceed|start|do\s+it|absolutely|please)\b|"
+    r"let'?s\s+(do|start|go)",
+    _re.I,
+)
+_REJECT_RE = _re.compile(
+    r'\b(no|nope|not\s+now|cancel|skip|never\s+mind|nevermind)\b',
+    _re.I,
+)
+
+
+def _is_confirmation(text: str) -> bool:
+    return bool(_CONFIRM_RE.search(text)) and not bool(_REJECT_RE.search(text))
+
+
+def _is_rejection(text: str) -> bool:
+    return bool(_REJECT_RE.search(text))
 
 
 # ---------- start_workflow tool definition (OpenAI function schema) ----------
@@ -69,6 +91,43 @@ START_WORKFLOW_TOOL: dict = {
                 },
             },
             "required": ["intent_id", "brief_reason"],
+        },
+    },
+}
+
+PROPOSE_WORKFLOW_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "propose_workflow",
+        "description": (
+            "Use when the user asked a question AND implied a transaction intent. "
+            "Answer their question first, then propose starting the workflow. "
+            "Do NOT use for clear direct commands — use start_workflow instead. "
+            "Never use for read-only intents (check_balance, view_transactions, check_request_status)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "intent_id": {
+                    "type": "string",
+                    "description": (
+                        "The registered intent id. Must be exactly one of: "
+                        + ", ".join(INTENT_PLANS.keys())
+                    ),
+                },
+                "answer": {
+                    "type": "string",
+                    "description": "1–3 sentence answer to the user's question.",
+                },
+                "proposal": {
+                    "type": "string",
+                    "description": (
+                        "Short sentence proposing the action, e.g. "
+                        "'Would you like me to start adding a beneficiary now?'"
+                    ),
+                },
+            },
+            "required": ["intent_id", "answer", "proposal"],
         },
     },
 }
@@ -141,24 +200,32 @@ def agent_node(state: AgentState) -> dict[str, Any]:
     """Conversational LLM agent.
 
     Outcomes:
-    - regex fast-path hit → set state.intent, route to plan_steps
-    - LLM tool call       → set state.intent + framing, route to plan_steps
-    - LLM text reply      → append to messages + final_message, route to END
+    - proposed_intent + confirmation → set intent, route to plan_steps
+    - LLM start_workflow tool call   → set intent, route to plan_steps
+    - LLM propose_workflow tool call → set proposed_intent, route to END
+    - LLM plain text reply           → append to messages + final_message, route to END
     """
     msgs = state.get("messages", []) or []
     last_user = _last_user_text(msgs)
 
-    # ----- Tier 1: regex fast-path for unambiguous phrasings -----
-    fast = regex_classify(last_user)
-    if fast and fast in INTENT_PLANS:
-        return {
-            "intent": fast,
-            "intent_confidence": 1.0,
-            "routed_via": "regex",
-            "routing_announcement": _announcement(fast, "regex", 1.0),
-        }
+    # ----- Step 0: proposed-intent pending — check if user is confirming or rejecting -----
+    proposed = state.get("proposed_intent")
+    if proposed:
+        if _is_confirmation(last_user):
+            label = INTENT_LABELS.get(proposed, proposed)
+            return {
+                "intent": proposed,
+                "proposed_intent": None,
+                "intent_confidence": 1.0,
+                "routed_via": "confirmed",
+                "routing_announcement": f"Great — starting {label.lower()} now.",
+            }
+        elif _is_rejection(last_user):
+            msg = AIMessage(content="No problem! Let me know if there's anything else I can help with.")
+            return {"messages": [msg], "final_message": msg.content, "proposed_intent": None}
+        # User pivoted to something new — clear the proposal and re-classify normally.
 
-    # ----- Tier 2: Azure AI Foundry OpenAI client -----
+    # ----- LLM classification -----
     if not os.environ.get("AZURE_OPENAI_API_KEY"):
         msg = AIMessage(content=(
             "I can help with retirement-account tasks like checking balance, changing "
@@ -172,7 +239,7 @@ def agent_node(state: AgentState) -> dict[str, Any]:
         completion = _get_openai_client().chat.completions.create(
             model=os.environ["AZURE_MODEL_DEPLOYMENT"],
             messages=api_messages,
-            tools=[START_WORKFLOW_TOOL],
+            tools=[START_WORKFLOW_TOOL, PROPOSE_WORKFLOW_TOOL],
             tool_choice="auto",
             temperature=0.3,
         )
@@ -195,17 +262,41 @@ def agent_node(state: AgentState) -> dict[str, Any]:
             args = json.loads(call.function.arguments)
         except (json.JSONDecodeError, AttributeError):
             args = {}
+        tool_call_id = call.id
+
+        tool_calls_meta = [
+            {"id": call.id, "type": "function",
+             "function": {"name": call.function.name, "arguments": call.function.arguments}}
+        ]
+
+        # ----- propose_workflow branch -----
+        if call.function.name == "propose_workflow":
+            intent_id = args.get("intent_id", "")
+            answer = args.get("answer", "")
+            proposal = args.get("proposal", "")
+            combined = f"{answer}\n\n{proposal}"
+            ai_msg = AIMessage(
+                content=combined,
+                additional_kwargs={"tool_calls": tool_calls_meta},
+            )
+            if intent_id not in INTENT_PLANS:
+                tool_err = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
+                return {"messages": [ai_msg, tool_err], "final_message": combined, "proposed_intent": None}
+            tool_msg = ToolMessage(content=f"workflow_proposed:{intent_id}", tool_call_id=tool_call_id)
+            return {
+                "messages": [ai_msg, tool_msg],
+                "final_message": combined,
+                "proposed_intent": intent_id,
+            }
+
+        # ----- start_workflow branch -----
         intent_id = args.get("intent_id", "")
         reason = args.get("brief_reason", "") or ""
-        tool_call_id = call.id
 
         # Store the assistant turn with its tool_calls metadata for future context.
         ai_msg = AIMessage(
             content=raw_msg.content or "",
-            additional_kwargs={"tool_calls": [
-                {"id": call.id, "type": "function",
-                 "function": {"name": call.function.name, "arguments": call.function.arguments}}
-            ]},
+            additional_kwargs={"tool_calls": tool_calls_meta},
         )
 
         if intent_id not in INTENT_PLANS:
@@ -216,12 +307,14 @@ def agent_node(state: AgentState) -> dict[str, Any]:
             return {
                 "messages": [ai_msg, tool_err, apology],
                 "final_message": apology.content,
+                "proposed_intent": None,
             }
 
         tool_msg = ToolMessage(content=f"workflow_started:{intent_id}", tool_call_id=tool_call_id)
         return {
             "messages": [ai_msg, tool_msg],
             "intent": intent_id,
+            "proposed_intent": None,
             "intent_confidence": None,
             "routed_via": "agent",
             "routing_announcement": _announcement(intent_id, "agent", None, reason=reason),
@@ -232,6 +325,7 @@ def agent_node(state: AgentState) -> dict[str, Any]:
     return {
         "messages": [ai_msg],
         "final_message": ai_msg.content,
+        "proposed_intent": None,
     }
 
 
@@ -375,6 +469,11 @@ def persist_step(state: AgentState, repo: Repository) -> dict[str, Any]:
 
 
 # ---------- routing edges ----------
+
+def route_from_start(state: AgentState) -> str:
+    """If the caller pre-set an intent (e.g. in tests), skip agent_node entirely."""
+    return "plan_steps" if state.get("intent") else "agent_node"
+
 
 def route_after_agent(state: AgentState) -> str:
     return "plan_steps" if state.get("intent") else "end"

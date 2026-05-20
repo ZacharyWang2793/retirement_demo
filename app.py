@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from langgraph.types import Command
 
 from agents.graph import build_graph
+from agents.intents import INTENT_LABELS
 from db.connection import get_db
 from db.repository import Repository
 from ui.cards import render_card
@@ -61,13 +62,41 @@ def _now_iso() -> str:
 
 
 def _conv_title(history: list[dict[str, Any]]) -> str:
-    """Derive a short label from a conversation's first user turn."""
+    """Fallback title: first user message truncated."""
     for m in history:
         if m.get("role") == "user":
             txt = (m.get("content") or "").strip()
             if txt:
                 return txt[:36] + ("…" if len(txt) > 36 else "")
     return "New conversation"
+
+
+def _generate_conv_title(first_user_text: str) -> str:
+    """Ask the LLM for a 3-5 word sidebar title based on the first user message."""
+    if not os.environ.get("AZURE_OPENAI_API_KEY"):
+        return _conv_title([{"role": "user", "content": first_user_text}])
+    try:
+        from agents.nodes import _get_openai_client
+        completion = _get_openai_client().chat.completions.create(
+            model=os.environ["AZURE_MODEL_DEPLOYMENT"],
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Generate a short sidebar title (3–5 words) for a retirement account "
+                        "chat conversation based on the user's first message. "
+                        "Respond with ONLY the title — no punctuation, no quotes, no explanation."
+                    ),
+                },
+                {"role": "user", "content": first_user_text},
+            ],
+            temperature=0.3,
+            max_tokens=15,
+        )
+        title = (completion.choices[0].message.content or "").strip().strip("\"'")
+        return title[:50] if title else _conv_title([{"role": "user", "content": first_user_text}])
+    except Exception:
+        return _conv_title([{"role": "user", "content": first_user_text}])
 
 
 def _group_conversations(convs: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
@@ -113,7 +142,7 @@ def _archive_current_conversation() -> None:
     convs = st.session_state.conversations
     record = {
         "thread_id": tid,
-        "title": _conv_title(history),
+        "title": st.session_state.get("conv_title") or _conv_title(history),
         "started_at": st.session_state.get("started_at") or _now_iso(),
         "last_at": _now_iso(),
         "history": list(history),
@@ -134,6 +163,8 @@ def _new_session(persist: bool = True) -> None:
     st.session_state.history = []
     st.session_state.started_at = _now_iso()
     st.session_state.pending_prompt = None
+    st.session_state.proposed_intent = None
+    st.session_state.conv_title = None
     _bust_sidebar_cache()
 
 
@@ -149,6 +180,7 @@ def _switch_to_conversation(thread_id: str) -> None:
     st.session_state.history = list(target["history"])
     st.session_state.started_at = target["started_at"]
     st.session_state.pending_prompt = None
+    st.session_state.conv_title = target.get("title")
     # Remove the now-active conversation from the archived list (it'll be re-archived on next switch).
     st.session_state.conversations = [
         c for c in st.session_state.conversations if c["thread_id"] != thread_id
@@ -165,6 +197,10 @@ if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
 if "started_at" not in st.session_state:
     st.session_state.started_at = _now_iso()
+if "proposed_intent" not in st.session_state:
+    st.session_state.proposed_intent = None
+if "conv_title" not in st.session_state:
+    st.session_state.conv_title = None
 
 
 # ---------- customer + account snapshot (cached per session) ----------
@@ -244,7 +280,9 @@ with st.sidebar:
 
     # Active conversation — highlighted, non-interactive
     if current_history:
-        active_title = html.escape(_conv_title(current_history))
+        active_title = html.escape(
+            st.session_state.get("conv_title") or _conv_title(current_history)
+        )
         st.markdown(
             f'<div class="rs-conv-active">{active_title}</div>',
             unsafe_allow_html=True,
@@ -309,6 +347,8 @@ def _absorb_run(payload: Any, *, spinner_label: str = "Working...") -> None:
             if msg and msg != seen_final_message:
                 st.session_state.history.append({"role": "assistant", "content": msg})
                 seen_final_message = msg
+            if "proposed_intent" in ev:
+                st.session_state.proposed_intent = ev["proposed_intent"]
 
 
 def _archive_card_summary(card, submission: dict[str, Any]) -> None:
@@ -513,6 +553,14 @@ def _run_pending_turn(pt: dict[str, Any]) -> None:
     _absorb_run(payload, spinner_label="Thinking...")
     typing_ph.empty()
 
+    # Generate an LLM title after the very first exchange
+    if st.session_state.get("conv_title") is None:
+        first_user = next(
+            (m["content"] for m in st.session_state.history if m.get("role") == "user"), ""
+        )
+        if first_user:
+            st.session_state.conv_title = _generate_conv_title(first_user)
+
 
 def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None:
     """Push a user message into the thread and run the graph from a fresh turn."""
@@ -585,6 +633,26 @@ elif values.get("final_card") is not None:
     _store_card_in_history(values["final_card"])
     _clear_terminal_state()
     st.rerun()
+
+
+# ---------- proposed-intent confirmation chips ----------
+
+_pending_pi = st.session_state.get("proposed_intent")
+if _pending_pi and not is_paused:
+    _pi_label = INTENT_LABELS.get(_pending_pi, _pending_pi)
+    st.markdown('<div class="rs-chip-row">', unsafe_allow_html=True)
+    _pi_col1, _pi_col2, _ = st.columns([1, 1, 2])
+    with _pi_col1:
+        if st.button(f"Yes, start now", key="pi-yes", type="primary"):
+            st.session_state.history.append({"role": "user", "content": "Yes, let's do it"})
+            st.session_state._pending_turn = {"user_text": "Yes, let's do it", "is_paused": False}
+            st.rerun()
+    with _pi_col2:
+        if st.button("No thanks", key="pi-no"):
+            st.session_state.history.append({"role": "user", "content": "No thanks"})
+            st.session_state._pending_turn = {"user_text": "No thanks", "is_paused": False}
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ---------- chip row when chat is empty ----------

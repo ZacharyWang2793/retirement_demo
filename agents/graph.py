@@ -23,6 +23,7 @@ from agents.nodes import (
     route_after_persist,
     route_after_render,
     route_after_validate,
+    route_from_start,
     validate_step,
 )
 from agents.state import AgentState
@@ -44,7 +45,7 @@ def build_graph(repo: Repository, *, checkpoint_db_path: str | None = None) -> A
     g.add_node("validate_step", partial(validate_step, repo=repo))
     g.add_node("persist_step", partial(persist_step, repo=repo))
 
-    g.add_edge(START, "agent_node")
+    g.add_conditional_edges(START, route_from_start, {"agent_node": "agent_node", "plan_steps": "plan_steps"})
     g.add_conditional_edges(
         "agent_node",
         route_after_agent,

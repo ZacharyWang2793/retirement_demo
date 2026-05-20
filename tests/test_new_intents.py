@@ -82,6 +82,7 @@ def test_check_request_status_shows_pending_seed():
     g, repo, config, tid = _new_graph_and_config()
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "check_request_status",
         "messages": [{"role": "user", "content": "what's the status of my requests?"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -100,6 +101,7 @@ def test_cancel_request_full_flow():
 
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "cancel_request",
         "messages": [{"role": "user", "content": "cancel a request"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -132,6 +134,7 @@ def test_change_email_full_flow():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "change_email",
         "messages": [{"role": "user", "content": "change my email"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -151,6 +154,7 @@ def test_change_name_full_flow_writes_doc():
     customer = repo.get_customer("demo-002")
     snap = _walk(g, {
         "customer_id": "demo-002", "thread_id": tid,
+        "intent": "change_name",
         "messages": [{"role": "user", "content": "change my legal name"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -180,6 +184,7 @@ def test_update_beneficiary_edit_path():
 
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "update_beneficiary",
         "messages": [{"role": "user", "content": "update my beneficiaries"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -217,6 +222,7 @@ def test_update_beneficiary_remove_path_skips_edit_form():
 
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "update_beneficiary",
         "messages": [{"role": "user", "content": "remove a beneficiary"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -242,6 +248,7 @@ def test_update_tax_withholding_full_flow():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "update_tax_withholding",
         "messages": [{"role": "user", "content": "update my federal tax withholding"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -263,6 +270,7 @@ def test_update_direct_deposit_microdeposit_happy_path():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "update_direct_deposit",
         "messages": [{"role": "user", "content": "update my direct deposit"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -287,6 +295,7 @@ def test_microdeposit_wrong_amounts_re_renders():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "update_direct_deposit",
         "messages": [{"role": "user", "content": "update my direct deposit"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -312,6 +321,7 @@ def test_change_allocation_must_sum_100_rejects():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "change_allocation",
         "messages": [{"role": "user", "content": "change my allocation"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -332,6 +342,7 @@ def test_change_allocation_full_flow():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "change_allocation",
         "messages": [{"role": "user", "content": "change my allocation"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -353,6 +364,7 @@ def test_rebalance_full_flow():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "rebalance",
         "messages": [{"role": "user", "content": "rebalance my portfolio"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -374,6 +386,7 @@ def test_take_rmd_full_flow():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "take_rmd",
         "messages": [{"role": "user", "content": "I need to take my RMD"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -394,6 +407,7 @@ def test_qualified_distribution_full_flow():
     customer = repo.get_customer("demo-001")
     snap = _walk(g, {
         "customer_id": "demo-001", "thread_id": tid,
+        "intent": "qualified_distribution",
         "messages": [{"role": "user", "content": "qualified distribution"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -417,6 +431,7 @@ def test_hardship_specialist_routing():
     customer = repo.get_customer("demo-002")
     snap = _walk(g, {
         "customer_id": "demo-002", "thread_id": tid,
+        "intent": "hardship_withdrawal",
         "messages": [{"role": "user", "content": "hardship withdrawal"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -439,6 +454,7 @@ def test_rollover_out_specialist_routing():
     customer = repo.get_customer("demo-002")
     snap = _walk(g, {
         "customer_id": "demo-002", "thread_id": tid,
+        "intent": "rollover_out",
         "messages": [{"role": "user", "content": "roll over my 401k to another plan"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -461,6 +477,7 @@ def test_rollover_in_no_verify():
     g, repo, config, tid = _new_graph_and_config()
     snap = _walk(g, {
         "customer_id": "demo-002", "thread_id": tid,
+        "intent": "rollover_in",
         "messages": [{"role": "user", "content": "roll over funds in from another plan"}],
         "verified": False, "collected_data": {},
     }, config)
@@ -483,6 +500,7 @@ def test_qdro_specialist_routing():
     customer = repo.get_customer("demo-002")
     snap = _walk(g, {
         "customer_id": "demo-002", "thread_id": tid,
+        "intent": "qdro",
         "messages": [{"role": "user", "content": "qdro intake"}],
         "verified": False, "collected_data": {},
     }, config)
