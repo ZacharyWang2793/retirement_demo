@@ -254,13 +254,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # New conversation — ChatGPT-style nav item
-    st.markdown('<div class="rs-new-conv-btn">', unsafe_allow_html=True)
-    if st.button("✏  New conversation", use_container_width=True, key="new-conv"):
-        _new_session(persist=True)
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
     # Profile pill
     if c:
         initial = (c["first_name"][:1] or "?").upper()
@@ -294,6 +287,13 @@ with st.sidebar:
             """,
             unsafe_allow_html=True,
         )
+
+    # New conversation button — below balance card
+    st.markdown('<div class="rs-new-conv-btn">', unsafe_allow_html=True)
+    if st.button("✏  New conversation", use_container_width=True, key="new-conv"):
+        _new_session(persist=True)
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Conversation history (ChatGPT-style) ──────────────────────────────
     current_history = st.session_state.get("history") or []

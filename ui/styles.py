@@ -438,7 +438,7 @@ div[data-testid="stNotification"][kind="error"] {
 /* ── New conversation button (ChatGPT nav-item style) ── */
 .rs-new-conv-btn .stButton button {
     background: var(--rs-dark-2) !important;
-    color: var(--rs-dark-ink) !important;
+    color: #FFFFFF !important;
     border: none !important;
     border-radius: var(--rs-radius-sm) !important;
     text-align: left !important;
@@ -450,11 +450,11 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-new-conv-btn .stButton button p,
 .rs-new-conv-btn .stButton button span,
 .rs-new-conv-btn .stButton button div {
-    color: var(--rs-dark-ink) !important;
+    color: #FFFFFF !important;
 }
 .rs-new-conv-btn .stButton button:hover {
     background: var(--rs-dark-3) !important;
-    color: var(--rs-dark-ink) !important;
+    color: #FFFFFF !important;
 }
 
 /* Brand mark in sidebar */
