@@ -71,10 +71,29 @@ def _conv_title(history: list[dict[str, Any]]) -> str:
     return "New conversation"
 
 
-def _generate_conv_title(first_user_text: str) -> str:
-    """Ask the LLM for a 3-5 word sidebar title based on the first user message."""
+def _generate_conv_title(history: list[dict[str, Any]]) -> str:
+    """Ask the LLM for a 3-5 word sidebar title using the first few exchanges.
+
+    Called on a deferred rerun so it never blocks the first response from rendering.
+    Passes up to the first 4 messages (2 user + 2 assistant) so a greeting like
+    "hi" resolves into the actual topic that emerged in the conversation.
+    """
+    # Build a short transcript from the first few meaningful turns
+    snippet_msgs = [
+        m for m in history[:6]
+        if m.get("role") in ("user", "assistant") and m.get("content")
+    ][:4]
+
+    if not snippet_msgs:
+        return _conv_title(history)
+
     if not os.environ.get("AZURE_OPENAI_API_KEY"):
-        return _conv_title([{"role": "user", "content": first_user_text}])
+        return _conv_title(history)
+
+    transcript = "\n".join(
+        f"{m['role'].title()}: {(m['content'] or '')[:200]}"
+        for m in snippet_msgs
+    )
     try:
         from agents.nodes import _get_openai_client
         completion = _get_openai_client().chat.completions.create(
@@ -84,19 +103,20 @@ def _generate_conv_title(first_user_text: str) -> str:
                     "role": "system",
                     "content": (
                         "Generate a short sidebar title (3–5 words) for a retirement account "
-                        "chat conversation based on the user's first message. "
-                        "Respond with ONLY the title — no punctuation, no quotes, no explanation."
+                        "support conversation. Use the transcript below to infer the actual topic "
+                        "— if the conversation starts with a greeting, look past it to the real request. "
+                        "Respond with ONLY the title, no punctuation, no quotes, no explanation."
                     ),
                 },
-                {"role": "user", "content": first_user_text},
+                {"role": "user", "content": transcript},
             ],
             temperature=0.3,
             max_tokens=15,
         )
         title = (completion.choices[0].message.content or "").strip().strip("\"'")
-        return title[:50] if title else _conv_title([{"role": "user", "content": first_user_text}])
+        return title[:50] if title else _conv_title(history)
     except Exception:
-        return _conv_title([{"role": "user", "content": first_user_text}])
+        return _conv_title(history)
 
 
 def _group_conversations(convs: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
@@ -165,6 +185,7 @@ def _new_session(persist: bool = True) -> None:
     st.session_state.pending_prompt = None
     st.session_state.proposed_intent = None
     st.session_state.conv_title = None
+    st.session_state.pop("_pending_title", None)
     _bust_sidebar_cache()
 
 
@@ -553,13 +574,10 @@ def _run_pending_turn(pt: dict[str, Any]) -> None:
     _absorb_run(payload, spinner_label="Thinking...")
     typing_ph.empty()
 
-    # Generate an LLM title after the very first exchange
+    # Flag that a title is needed — generated on the *next* rerun so it never
+    # blocks the first response from appearing.
     if st.session_state.get("conv_title") is None:
-        first_user = next(
-            (m["content"] for m in st.session_state.history if m.get("role") == "user"), ""
-        )
-        if first_user:
-            st.session_state.conv_title = _generate_conv_title(first_user)
+        st.session_state._pending_title = True
 
 
 def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None:
@@ -596,6 +614,14 @@ def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None
 # ---------- render history first ----------
 
 render_chat_history(st.session_state.history)
+
+
+# ---------- deferred title generation ----------
+# Runs on the rerun *after* the first response renders, so the LLM title call
+# never adds latency to showing the first message.
+
+if st.session_state.pop("_pending_title", False) and st.session_state.get("conv_title") is None:
+    st.session_state.conv_title = _generate_conv_title(st.session_state.history)
 
 
 # ---------- deferred turn: user message already rendered; now run the graph ----------
