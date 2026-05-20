@@ -666,19 +666,17 @@ elif values.get("final_card") is not None:
 _pending_pi = st.session_state.get("proposed_intent")
 if _pending_pi and not is_paused:
     _pi_label = INTENT_LABELS.get(_pending_pi, _pending_pi)
-    st.markdown('<div class="rs-chip-row">', unsafe_allow_html=True)
-    _pi_col1, _pi_col2, _ = st.columns([1, 1, 2])
+    _pi_col1, _pi_col2, _ = st.columns([2, 2, 6], gap="small")
     with _pi_col1:
-        if st.button(f"Yes, start now", key="pi-yes", type="primary"):
+        if st.button("Yes, start now", key="pi-yes", type="primary", use_container_width=True):
             st.session_state.history.append({"role": "user", "content": "Yes, let's do it"})
             st.session_state._pending_turn = {"user_text": "Yes, let's do it", "is_paused": False}
             st.rerun()
     with _pi_col2:
-        if st.button("No thanks", key="pi-no"):
+        if st.button("No thanks", key="pi-no", use_container_width=True):
             st.session_state.history.append({"role": "user", "content": "No thanks"})
             st.session_state._pending_turn = {"user_text": "No thanks", "is_paused": False}
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ---------- chip row when chat is empty ----------
