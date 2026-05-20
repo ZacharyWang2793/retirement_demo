@@ -102,10 +102,14 @@ def _generate_conv_title(history: list[dict[str, Any]]) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Generate a short sidebar title (3–5 words) for a retirement account "
-                        "support conversation. Use the transcript below to infer the actual topic "
-                        "— if the conversation starts with a greeting, look past it to the real request. "
-                        "Respond with ONLY the title, no punctuation, no quotes, no explanation."
+                        "Write a sidebar title for a retirement account support conversation. "
+                        "Rules: title case noun phrase, 3–6 words, no punctuation, no quotes. "
+                        "Be specific — include names, account types, or dollar amounts when present. "
+                        "If the conversation opens with a greeting or small talk, look past it to "
+                        "the first real request. Never start with 'How', 'What', 'Can', or other "
+                        "question words. Examples of good titles: 'Add Sarah Lee Beneficiary', "
+                        "'401k Rollover to IRA', 'Change Home Address', 'Required Minimum Distribution'. "
+                        "Reply with ONLY the title."
                     ),
                 },
                 {"role": "user", "content": transcript},
@@ -299,12 +303,13 @@ with st.sidebar:
     current_history = st.session_state.get("history") or []
     convs = list(st.session_state.conversations)
 
-    # Active conversation — highlighted, non-interactive
+    # Active conversation — section header + highlighted title
     if current_history:
         active_title = html.escape(
             st.session_state.get("conv_title") or _conv_title(current_history)
         )
         st.markdown(
+            f'<div class="rs-section-label">Current</div>'
             f'<div class="rs-conv-active">{active_title}</div>',
             unsafe_allow_html=True,
         )

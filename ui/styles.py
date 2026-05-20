@@ -525,14 +525,16 @@ div[data-testid="stNotification"][kind="error"] {
 
 /* Active / current conversation highlight */
 .rs-conv-active {
-    font-size: 14px; font-weight: 500;
-    color: var(--rs-dark-ink);
+    font-size: 14px; font-weight: 700;
+    color: #FFFFFF;
     background: var(--rs-dark-3);
-    border-radius: var(--rs-radius-sm);
-    padding: 8px 12px;
-    margin: 0 0 4px 0;
+    border-left: 3px solid var(--rs-yellow);
+    border-radius: 0 var(--rs-radius-sm) var(--rs-radius-sm) 0;
+    padding: 9px 12px 9px 10px;
+    margin: 0 0 10px 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     cursor: default;
+    letter-spacing: 0.01em;
 }
 
 /* Conversation list rows (sidebar) — borderless, ChatGPT-style */
