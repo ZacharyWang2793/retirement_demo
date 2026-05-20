@@ -1,8 +1,12 @@
 # Retirement Account Support — Agent Prototype
 
-An agent-powered customer support chat for a retirement account. The orchestrator agent classifies the user's intent, generates a step plan, and emits inline interactive cards (forms, confirmations, read-only views) inside the chat thread. The reference flow is *change address* — verify identity → collect new address → confirm diff → persist → success.
+An agent-powered customer support experience for a retirement account. The orchestrator classifies the user's intent, generates a step plan, and emits interactive cards (forms, confirmations, read-only views) for the user to fill in.
 
-## Quickstart
+Two frontends live in this repo:
+- **`app.py`** — the original Streamlit chat (single-column message timeline)
+- **`frontend/`** — a Next.js canvas where the LLM spawns draggable, grid-snapped cards in response to a small bottom chat bar (the canvas paradigm). Backed by **`backend/`** — a FastAPI service that wraps the same LangGraph
+
+## Quickstart (Streamlit chat — original)
 
 ```bash
 python3.11 -m venv .venv
@@ -17,6 +21,25 @@ streamlit run app.py
 ```
 
 Open the browser link Streamlit prints. Pick a demo customer in the sidebar.
+
+## Quickstart (Next.js canvas)
+
+Two terminals — backend and frontend:
+
+```bash
+# Terminal 1 — FastAPI backend on :8000
+source .venv/bin/activate
+uvicorn backend.main:app --reload --port 8000
+
+# Terminal 2 — Next.js frontend on :3000
+cd frontend
+npm install     # one-time
+npm run dev
+```
+
+Then open http://localhost:3000. The frontend proxies `/api/*` to `localhost:8000`.
+
+Requires Node 18+ for the frontend.
 
 ## Demo customers (after `python -m data.seed`)
 
@@ -47,5 +70,7 @@ chat input  →  LangGraph orchestrator  →  card spec  →  Streamlit renders 
 - `app.py` — Streamlit ↔ LangGraph interrupt bridge
 - `agents/` — graph, nodes, intent registry, prompts
 - `ui/` — card models (Pydantic) + per-card Streamlit renderers
-- `db/` — SQLite repository (only place mutating SQL lives)
+- `backend/` — FastAPI service exposing the LangGraph as JSON + SSE endpoints
+- `frontend/` — Next.js + React canvas (Phase 1: chat bar, balance view, allocation form, confirmation, success)
+- `db/` — SQLite repository (only place mutating SQL lives); includes `canvas_sessions` table for saved canvases
 - `data/` — schema and seed script

@@ -948,3 +948,75 @@ class Repository:
         except Exception:
             self.conn.rollback()
             raise
+
+    # ---------- canvas sessions (React frontend) ----------
+
+    def create_canvas_session(self, *, thread_id: str, customer_id: str) -> None:
+        now = _now()
+        self.conn.execute(
+            "INSERT INTO canvas_sessions "
+            "(thread_id, customer_id, title, cards_json, messages_json, created_at, updated_at) "
+            "VALUES (?, ?, NULL, '[]', '[]', ?, ?)",
+            (thread_id, customer_id, now, now),
+        )
+        self.conn.commit()
+
+    def list_canvas_sessions(self, customer_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT thread_id, title, updated_at FROM canvas_sessions "
+            "WHERE customer_id = ? ORDER BY updated_at DESC",
+            (customer_id,),
+        ).fetchall()
+        return [
+            {"thread_id": r["thread_id"], "title": r["title"], "updated_at": r["updated_at"]}
+            for r in rows
+        ]
+
+    def get_canvas_session(self, thread_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT thread_id, customer_id, title, cards_json, messages_json, updated_at "
+            "FROM canvas_sessions WHERE thread_id = ?",
+            (thread_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "thread_id": row["thread_id"],
+            "customer_id": row["customer_id"],
+            "title": row["title"],
+            "cards": json.loads(row["cards_json"] or "[]"),
+            "messages": json.loads(row["messages_json"] or "[]"),
+            "updated_at": row["updated_at"],
+        }
+
+    def save_canvas_state(
+        self,
+        *,
+        thread_id: str,
+        title: str | None,
+        cards: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+    ) -> None:
+        now = _now()
+        cards_json = json.dumps(cards)
+        messages_json = json.dumps(messages)
+        # Upsert — handles autosave before an explicit POST /sessions.
+        self.conn.execute(
+            "INSERT INTO canvas_sessions (thread_id, customer_id, title, cards_json, messages_json, created_at, updated_at) "
+            "VALUES (?, "
+            "  COALESCE((SELECT customer_id FROM canvas_sessions WHERE thread_id = ?), 'demo-001'), "
+            "  ?, ?, ?, "
+            "  COALESCE((SELECT created_at FROM canvas_sessions WHERE thread_id = ?), ?), "
+            "  ?) "
+            "ON CONFLICT(thread_id) DO UPDATE SET "
+            "  title = excluded.title, "
+            "  cards_json = excluded.cards_json, "
+            "  messages_json = excluded.messages_json, "
+            "  updated_at = excluded.updated_at",
+            (thread_id, thread_id, title, cards_json, messages_json, thread_id, now, now),
+        )
+        self.conn.commit()
+
+    def delete_canvas_session(self, thread_id: str) -> None:
+        self.conn.execute("DELETE FROM canvas_sessions WHERE thread_id = ?", (thread_id,))
+        self.conn.commit()

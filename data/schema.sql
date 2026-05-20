@@ -191,3 +191,17 @@ CREATE INDEX IF NOT EXISTS idx_investments_account ON investments(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id, txn_date DESC);
 CREATE INDEX IF NOT EXISTS idx_requests_customer ON requests(customer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_customer ON audit_log(customer_id, occurred_at DESC);
+
+-- Canvas (React frontend) — saved state of a draggable card grid per session.
+-- Independent of the LangGraph checkpoints table; this only stores what the user sees.
+CREATE TABLE IF NOT EXISTS canvas_sessions (
+    thread_id     TEXT PRIMARY KEY,
+    customer_id   TEXT NOT NULL,
+    title         TEXT,
+    cards_json    TEXT NOT NULL DEFAULT '[]',
+    messages_json TEXT NOT NULL DEFAULT '[]',
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_customer ON canvas_sessions(customer_id, updated_at DESC);
