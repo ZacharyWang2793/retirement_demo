@@ -136,23 +136,6 @@ class RequestListCard(BaseCard):
     submit_label: str = "Done"
 
 
-class DocumentLinkCard(BaseCard):
-    card_type: Literal["document_link"] = "document_link"
-    file_path: str
-    kind: str
-    period: str
-    generated_at: str
-    submit_label: str = "Done"
-
-
-class StatementPickerCard(BaseCard):
-    card_type: Literal["statement_picker"] = "statement_picker"
-    accounts: list[dict[str, str]] = Field(default_factory=list)
-    periods: list[str] = Field(default_factory=list)
-    kinds: list[str] = Field(default_factory=lambda: ["statement_quarterly", "1099r", "1099q"])
-    submit_label: str = "Generate"
-
-
 # ---------- tax / banking ----------
 
 class TaxWithholdingFormCard(BaseCard):
@@ -175,7 +158,7 @@ class MicroDepositCard(BaseCard):
     submit_label: str = "Verify deposits"
 
 
-# ---------- distributions / loans ----------
+# ---------- distributions ----------
 
 class RmdAmountCard(BaseCard):
     card_type: Literal["rmd_amount"] = "rmd_amount"
@@ -195,52 +178,6 @@ class DistributionRequestFormCard(BaseCard):
     card_type: Literal["distribution_request_form"] = "distribution_request_form"
     accounts: list[dict[str, str]] = Field(default_factory=list)
     submit_label: str = "Request distribution"
-
-
-class LoanQuoteCard(BaseCard):
-    card_type: Literal["loan_quote"] = "loan_quote"
-    max_loan_amount: float
-    vested_balance: float
-    suggested_rate_pct: float
-    submit_label: str = "Continue"
-
-
-class LoanRequestFormCard(BaseCard):
-    card_type: Literal["loan_request_form"] = "loan_request_form"
-    accounts: list[dict[str, str]] = Field(default_factory=list)
-    max_amount: float
-    submit_label: str = "Request loan"
-
-
-class LoanStatusCard(BaseCard):
-    card_type: Literal["loan_status"] = "loan_status"
-    loans: list[dict[str, Any]] = Field(default_factory=list)
-    submit_label: str = "Done"
-
-
-# ---------- security / preferences ----------
-
-class MfaDeviceListCard(BaseCard):
-    card_type: Literal["mfa_device_list"] = "mfa_device_list"
-    devices: list[dict[str, Any]] = Field(default_factory=list)
-    submit_label: str = "Continue"
-
-
-class MfaEnrollFormCard(BaseCard):
-    card_type: Literal["mfa_enroll_form"] = "mfa_enroll_form"
-    submit_label: str = "Enroll device"
-
-
-class DeliveryPrefsFormCard(BaseCard):
-    card_type: Literal["delivery_prefs_form"] = "delivery_prefs_form"
-    prefilled: dict[str, Any] = Field(default_factory=dict)
-    submit_label: str = "Save preferences"
-
-
-class PasswordResetLinkCard(BaseCard):
-    card_type: Literal["password_reset_link"] = "password_reset_link"
-    email_masked: str
-    submit_label: str = "Done"
 
 
 # ---------- specialist-routed (Tier 3) ----------
@@ -314,21 +251,12 @@ Card = Union[
     BalanceViewCard,
     TransactionHistoryCard,
     RequestListCard,
-    DocumentLinkCard,
-    StatementPickerCard,
     TaxWithholdingFormCard,
     BankAccountFormCard,
     MicroDepositCard,
     RmdAmountCard,
     DistributionMethodCard,
     DistributionRequestFormCard,
-    LoanQuoteCard,
-    LoanRequestFormCard,
-    LoanStatusCard,
-    MfaDeviceListCard,
-    MfaEnrollFormCard,
-    DeliveryPrefsFormCard,
-    PasswordResetLinkCard,
     HardshipReasonFormCard,
     RolloverOutFormCard,
     RolloverInFormCard,
@@ -355,21 +283,12 @@ _TYPE_TO_CLS: dict[str, type[BaseCard]] = {
     "balance_view": BalanceViewCard,
     "transaction_history": TransactionHistoryCard,
     "request_list": RequestListCard,
-    "document_link": DocumentLinkCard,
-    "statement_picker": StatementPickerCard,
     "tax_withholding_form": TaxWithholdingFormCard,
     "bank_account_form": BankAccountFormCard,
     "microdeposit": MicroDepositCard,
     "rmd_amount": RmdAmountCard,
     "distribution_method": DistributionMethodCard,
     "distribution_request_form": DistributionRequestFormCard,
-    "loan_quote": LoanQuoteCard,
-    "loan_request_form": LoanRequestFormCard,
-    "loan_status": LoanStatusCard,
-    "mfa_device_list": MfaDeviceListCard,
-    "mfa_enroll_form": MfaEnrollFormCard,
-    "delivery_prefs_form": DeliveryPrefsFormCard,
-    "password_reset_link": PasswordResetLinkCard,
     "hardship_form": HardshipReasonFormCard,
     "rollover_out_form": RolloverOutFormCard,
     "rollover_in_form": RolloverInFormCard,

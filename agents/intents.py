@@ -32,24 +32,16 @@ from ui.card_models import (
     Card,
     ConfirmationCard,
     ContributionFormCard,
-    DeliveryPrefsFormCard,
     DistributionMethodCard,
     DistributionRequestFormCard,
-    DocumentLinkCard,
     DriftViewCard,
     EmailFormCard,
     HardshipReasonFormCard,
     IdentityVerificationCard,
-    LoanQuoteCard,
-    LoanRequestFormCard,
-    LoanStatusCard,
-    MfaDeviceListCard,
-    MfaEnrollFormCard,
     MicroDepositCard,
     NameFormCard,
     NotImplementedCard,
     OtpCard,
-    PasswordResetLinkCard,
     PhoneFormCard,
     QdroIntakeFormCard,
     RequestListCard,
@@ -57,7 +49,6 @@ from ui.card_models import (
     RolloverInFormCard,
     RolloverOutFormCard,
     SpecialistRoutingCard,
-    StatementPickerCard,
     SuccessCard,
     TaxWithholdingFormCard,
     TransactionHistoryCard,
@@ -73,16 +64,15 @@ INTENTS: list[str] = [
     # beneficiaries
     "add_beneficiary", "update_beneficiary",
     # read-only / status
-    "check_balance", "view_transactions", "download_statement",
+    "check_balance", "view_transactions",
     "check_request_status", "cancel_request",
     # investments / contributions
     "change_contribution", "change_allocation", "rebalance",
     # distributions / withdrawals
-    "take_rmd", "hardship_withdrawal", "request_loan", "loan_status",
+    "take_rmd", "hardship_withdrawal",
     "qualified_distribution", "rollover_out", "rollover_in", "qdro",
     # tax / banking / security
-    "update_tax_withholding", "update_direct_deposit", "manage_mfa",
-    "delivery_preferences", "reset_password",
+    "update_tax_withholding", "update_direct_deposit",
 ]
 
 INTENT_LABELS: dict[str, str] = {
@@ -94,7 +84,6 @@ INTENT_LABELS: dict[str, str] = {
     "update_beneficiary": "Update or remove a beneficiary",
     "check_balance": "Check account balance",
     "view_transactions": "View recent transactions",
-    "download_statement": "Download statement or 1099-R",
     "check_request_status": "Check status of a pending request",
     "cancel_request": "Cancel a pending request",
     "change_contribution": "Change contribution amount",
@@ -102,17 +91,12 @@ INTENT_LABELS: dict[str, str] = {
     "rebalance": "Rebalance portfolio",
     "take_rmd": "Take a required minimum distribution",
     "hardship_withdrawal": "Request a hardship withdrawal",
-    "request_loan": "Request a loan from your account",
-    "loan_status": "Check loan status / payoff",
     "qualified_distribution": "Take a qualified distribution",
     "rollover_out": "Roll over funds to another account",
     "rollover_in": "Roll over funds in from another plan",
     "qdro": "QDRO / divorce-related distribution",
     "update_tax_withholding": "Update tax withholding",
     "update_direct_deposit": "Update direct deposit / EFT",
-    "manage_mfa": "Manage MFA / trusted devices",
-    "delivery_preferences": "Update paperless / delivery preferences",
-    "reset_password": "Reset password",
 }
 
 
@@ -130,8 +114,6 @@ INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bhow much\b.*\b(have|saved|in my)\b", re.I), "check_balance"),
     (re.compile(r"\b(my|account)\b.*\bbalance\b", re.I), "check_balance"),
     (re.compile(r"\b(transactions?|recent activity|history)\b", re.I), "view_transactions"),
-    (re.compile(r"\b(download|view|get|see)\b.*\b(statement|1099|tax form)\b", re.I), "download_statement"),
-    (re.compile(r"\b(statement|1099|tax form)\b", re.I), "download_statement"),
     # cancel BEFORE the broader request-status patterns so "cancel a request" wins
     (re.compile(r"\b(cancel|withdraw)\b.*\brequest\b", re.I), "cancel_request"),
     (re.compile(r"\b(status|update on|pending)\b.*\b(request|change|update)\b", re.I), "check_request_status"),
@@ -142,17 +124,12 @@ INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\brebalance\b", re.I), "rebalance"),
     (re.compile(r"\brmd\b|\brequired minimum distribution\b", re.I), "take_rmd"),
     (re.compile(r"\bhardship\b", re.I), "hardship_withdrawal"),
-    (re.compile(r"\b(request|take out|borrow)\b.*\bloan\b", re.I), "request_loan"),
-    (re.compile(r"\bloan\b.*\b(status|payoff|balance)\b", re.I), "loan_status"),
     (re.compile(r"\bqualified distribution\b", re.I), "qualified_distribution"),
     (re.compile(r"\b(roll ?over|move).*\b(out|to another)\b", re.I), "rollover_out"),
     (re.compile(r"\b(roll ?over|move).*\b(in|from)\b", re.I), "rollover_in"),
     (re.compile(r"\bqdro\b|\bdivorce\b", re.I), "qdro"),
     (re.compile(r"\b(tax|federal|state)\b.*\bwithhold", re.I), "update_tax_withholding"),
     (re.compile(r"\b(direct deposit|ach|eft|bank account)\b", re.I), "update_direct_deposit"),
-    (re.compile(r"\b(mfa|two[- ]?factor|authenticator)\b", re.I), "manage_mfa"),
-    (re.compile(r"\b(paperless|e-?delivery|delivery preference)\b", re.I), "delivery_preferences"),
-    (re.compile(r"\b(reset|change|forgot)\b.*\bpassword\b", re.I), "reset_password"),
 ]
 
 
@@ -412,38 +389,6 @@ def _request_list_cancellable(state: dict[str, Any], repo: Repository) -> Card:
     )
 
 
-def _statement_picker(state: dict[str, Any], repo: Repository) -> Card:
-    accounts = _account_labels(repo, state["customer_id"])
-    today = date.today()
-    periods = []
-    for offset in range(0, 4):
-        q = ((today.month - 1) // 3) - offset
-        y = today.year + (q // 4 if q >= 0 else (q - 3) // 4)
-        q = q % 4
-        periods.append(f"{y} Q{q + 1}")
-    periods.append(f"{today.year - 1} Annual")
-    return StatementPickerCard(
-        title="Download a statement",
-        subtitle="Pick the account, document type, and period.",
-        accounts=accounts,
-        periods=periods,
-        kinds=["statement_quarterly", "statement_annual", "1099r", "1099q"],
-    )
-
-
-def _document_link(state: dict[str, Any], repo: Repository) -> Card:
-    pick = state["collected_data"]["statement_pick"]
-    rid = state["collected_data"].get("request_id", "")
-    return DocumentLinkCard(
-        title="Statement ready",
-        subtitle="Your statement has been generated.",
-        file_path=f"documents/{state['customer_id']}/{pick['kind']}/{pick['period'].replace(' ', '-')}.pdf",
-        kind=pick["kind"],
-        period=pick["period"],
-        generated_at=datetime.utcnow().isoformat(timespec="seconds") + "Z",
-    )
-
-
 # ---------- tax / banking ----------
 
 def _tax_withholding_form(state: dict[str, Any], repo: Repository) -> Card:
@@ -484,42 +429,7 @@ def _microdeposit_card(state: dict[str, Any], repo: Repository) -> Card:
     )
 
 
-# ---------- loans / distributions ----------
-
-def _loan_quote(state: dict[str, Any], repo: Repository) -> Card:
-    acct = _pick_primary_account(repo, state["customer_id"])
-    vested = (acct["vested_balance"] if acct else 0.0)
-    # IRS rule: lesser of $50k or 50% of vested
-    max_loan = min(50000.0, vested * 0.5)
-    return LoanQuoteCard(
-        title="Loan quote",
-        subtitle="Based on your current vested balance.",
-        max_loan_amount=max_loan,
-        vested_balance=vested,
-        suggested_rate_pct=7.5,
-    )
-
-
-def _loan_request_form(state: dict[str, Any], repo: Repository) -> Card:
-    acct = _pick_primary_account(repo, state["customer_id"])
-    vested = (acct["vested_balance"] if acct else 0.0)
-    max_loan = min(50000.0, vested * 0.5)
-    return LoanRequestFormCard(
-        title="Request a loan",
-        subtitle=f"Maximum available: ${max_loan:,.0f}",
-        accounts=_account_labels(repo, state["customer_id"], only_types={"401k", "roth_401k"}),
-        max_amount=max_loan,
-    )
-
-
-def _loan_status(state: dict[str, Any], repo: Repository) -> Card:
-    loans = repo.list_loans(state["customer_id"])
-    return LoanStatusCard(
-        title="Your loans",
-        subtitle="Outstanding balance and next payment due.",
-        loans=loans,
-    )
-
+# ---------- distributions ----------
 
 def _rmd_amount(state: dict[str, Any], repo: Repository) -> Card:
     summary = repo.get_balance_summary(state["customer_id"])
@@ -555,45 +465,6 @@ def _distribution_request_form(state: dict[str, Any], repo: Repository) -> Card:
         title="Request a distribution",
         subtitle="Funds will be sent via your selected method, less applicable withholding.",
         accounts=_account_labels(repo, state["customer_id"]),
-    )
-
-
-# ---------- security / preferences ----------
-
-def _mfa_device_list(state: dict[str, Any], repo: Repository) -> Card:
-    devices = repo.list_mfa_devices(state["customer_id"])
-    return MfaDeviceListCard(
-        title="Manage MFA devices",
-        subtitle="Add, remove, or review the devices used to verify sign-ins.",
-        devices=devices,
-    )
-
-
-def _mfa_enroll_form(state: dict[str, Any], repo: Repository) -> Card:
-    return MfaEnrollFormCard(
-        title="Enroll a new MFA device",
-        subtitle="Pick the type, label it, and provide contact info if needed.",
-    )
-
-
-def _delivery_prefs_form(state: dict[str, Any], repo: Repository) -> Card:
-    p = repo.get_delivery_prefs(state["customer_id"]) or {}
-    return DeliveryPrefsFormCard(
-        title="Delivery preferences",
-        subtitle="Choose how you want to receive statements, tax forms, and marketing email.",
-        prefilled={
-            "paperless_statements": bool(p.get("paperless_statements", True)),
-            "paperless_tax": bool(p.get("paperless_tax", False)),
-            "marketing_email": bool(p.get("marketing_email", True)),
-        },
-    )
-
-
-def _password_reset_link(state: dict[str, Any], repo: Repository) -> Card:
-    masked = state["collected_data"].get("email_masked", "***")
-    return PasswordResetLinkCard(
-        title="Password reset link sent",
-        email_masked=masked,
     )
 
 
@@ -756,18 +627,6 @@ def _confirmation_bank_default(state: dict[str, Any], repo: Repository) -> Card:
     )
 
 
-def _confirmation_loan(state: dict[str, Any], repo: Repository) -> Card:
-    d = state["collected_data"]["loan_request"]
-    return ConfirmationCard(
-        title="Confirm loan request",
-        summary_lines=[
-            f"Amount: **${d['amount']:,.2f}**",
-            f"Term: **{d['term_months']} months**",
-            "Rate: 7.5% (subject to plan rules)",
-        ],
-    )
-
-
 def _confirmation_distribution(state: dict[str, Any], repo: Repository) -> Card:
     d = state["collected_data"]["distribution"]
     return ConfirmationCard(
@@ -788,37 +647,6 @@ def _confirmation_rmd(state: dict[str, Any], repo: Repository) -> Card:
             f"Method: **{method['method'].replace('_', ' ')}**",
         ],
     )
-
-
-def _confirmation_mfa(state: dict[str, Any], repo: Repository) -> Card:
-    d = state["collected_data"]["mfa_action"]
-    if d.get("action") == "remove":
-        target = next(
-            (x for x in repo.list_mfa_devices(state["customer_id"]) if x["id"] == d.get("device_id")),
-            None,
-        )
-        return ConfirmationCard(
-            title="Confirm device removal",
-            summary_lines=[f"Remove **{target['label']}** ({target['kind'].upper()})?" if target else "Remove device?"],
-        )
-    enroll = state["collected_data"].get("mfa_enroll", {})
-    return ConfirmationCard(
-        title="Confirm new MFA device",
-        summary_lines=[
-            f"Type: **{enroll.get('kind', '').upper()}**",
-            f"Label: **{enroll.get('label', '')}**",
-        ],
-    )
-
-
-def _confirmation_delivery_prefs(state: dict[str, Any], repo: Repository) -> Card:
-    d = state["collected_data"]["delivery_prefs"]
-    lines = [
-        f"Paperless statements: **{'on' if d['paperless_statements'] else 'off'}**",
-        f"Paperless tax forms: **{'on' if d['paperless_tax'] else 'off'}**",
-        f"Marketing email: **{'on' if d['marketing_email'] else 'off'}**",
-    ]
-    return ConfirmationCard(title="Confirm preferences", summary_lines=lines)
 
 
 def _confirmation_rollover_out(state: dict[str, Any], repo: Repository) -> Card:
@@ -943,18 +771,6 @@ def _success_bank(state: dict[str, Any], repo: Repository) -> Card:
     )
 
 
-def _success_loan(state: dict[str, Any], repo: Repository) -> Card:
-    d = state["collected_data"]["loan_request"]
-    return SuccessCard(
-        title="Loan request submitted",
-        summary_lines=[
-            f"${d['amount']:,.2f} over {d['term_months']} months.",
-            "Funds typically disburse within 3–5 business days.",
-        ],
-        request_id=state["collected_data"].get("request_id"),
-    )
-
-
 def _success_rmd(state: dict[str, Any], repo: Repository) -> Card:
     return SuccessCard(
         title="RMD scheduled",
@@ -968,30 +784,6 @@ def _success_distribution(state: dict[str, Any], repo: Repository) -> Card:
     return SuccessCard(
         title="Distribution requested",
         summary_lines=[f"${d['amount']:,.2f} via {d['method'].replace('_', ' ')}"],
-        request_id=state["collected_data"].get("request_id"),
-    )
-
-
-def _success_mfa(state: dict[str, Any], repo: Repository) -> Card:
-    d = state["collected_data"]["mfa_action"]
-    if d.get("action") == "remove":
-        return SuccessCard(
-            title="Device removed",
-            summary_lines=["You'll no longer be prompted on that device."],
-            request_id=state["collected_data"].get("request_id"),
-        )
-    e = state["collected_data"].get("mfa_enroll", {})
-    return SuccessCard(
-        title="Device enrolled",
-        summary_lines=[f"**{e.get('label', '')}** ({e.get('kind', '').upper()}) is now active."],
-        request_id=state["collected_data"].get("request_id"),
-    )
-
-
-def _success_delivery_prefs(state: dict[str, Any], repo: Repository) -> Card:
-    return SuccessCard(
-        title="Preferences updated",
-        summary_lines=["Your delivery preferences have been saved."],
         request_id=state["collected_data"].get("request_id"),
     )
 
@@ -1130,14 +922,6 @@ def _validate_microdeposit(submission, state, repo):
     return None
 
 
-def _validate_loan_request(submission, state, repo):
-    if _ok_if_cancelled(submission): return None
-    amt = float(submission.get("amount", 0))
-    if amt < 1000:
-        return "Loan amount must be at least $1,000."
-    return None
-
-
 def _validate_distribution_request(submission, state, repo):
     if _ok_if_cancelled(submission): return None
     if float(submission.get("amount", 0)) < 100:
@@ -1150,25 +934,6 @@ def _validate_distribution_method(submission, state, repo):
     method = submission.get("method")
     if method == "bank_transfer" and not submission.get("bank_account_id"):
         return "Pick a bank account or switch to mailed check."
-    return None
-
-
-def _validate_mfa_action(submission, state, repo):
-    if _ok_if_cancelled(submission): return None
-    action = submission.get("action")
-    if action == "remove" and not submission.get("device_id"):
-        return "Pick a device to remove."
-    return None
-
-
-def _validate_mfa_enroll(submission, state, repo):
-    if _ok_if_cancelled(submission): return None
-    if not submission.get("label"):
-        return "Device label is required."
-    if submission.get("kind") == "sms":
-        digits = "".join(c for c in (submission.get("contact") or "") if c.isdigit())
-        if len(digits) != 10:
-            return "SMS device needs a valid 10-digit phone number."
     return None
 
 
@@ -1186,13 +951,6 @@ def _validate_request_pick(submission, state, repo):
     if _ok_if_cancelled(submission): return None
     if not submission.get("request_id"):
         return "Pick a pending request to cancel."
-    return None
-
-
-def _validate_statement_pick(submission, state, repo):
-    if _ok_if_cancelled(submission): return None
-    if not submission.get("account_id") or not submission.get("kind") or not submission.get("period"):
-        return "Account, document type, and period are all required."
     return None
 
 
@@ -1242,11 +1000,6 @@ def _collect_allocation(sub, st_): return {"allocation": sub}
 def _collect_tax_withholding(sub, st_): return {"tax_withholding": sub}
 def _collect_distribution_method(sub, st_): return {"rmd_method": sub}
 def _collect_distribution(sub, st_): return {"distribution": sub}
-def _collect_loan_request(sub, st_): return {"loan_request": sub}
-def _collect_mfa_action(sub, st_): return {"mfa_action": sub}
-def _collect_mfa_enroll(sub, st_): return {"mfa_enroll": sub}
-def _collect_delivery_prefs(sub, st_): return {"delivery_prefs": sub}
-def _collect_statement_pick(sub, st_): return {"statement_pick": sub}
 def _collect_hardship(sub, st_): return {"hardship": sub}
 def _collect_rollover_out(sub, st_): return {"rollover_out": sub}
 def _collect_rollover_in(sub, st_): return {"rollover_in": sub}
@@ -1428,17 +1181,6 @@ def _persist_bank_verify(state, repo):
     return {"request_id": res.request_id}
 
 
-def _persist_loan(state, repo):
-    d = state["collected_data"]["loan_request"]
-    res = repo.request_loan(
-        customer_id=state["customer_id"], thread_id=state.get("thread_id"),
-        account_id=d["account_id"], amount=d["amount"], term_months=d["term_months"],
-        rate_pct=7.5,
-        idempotency_key=_idempotency_key(state, "persist_loan"),
-    )
-    return {"request_id": res.request_id}
-
-
 def _persist_rmd(state, repo):
     acct = _pick_primary_account(repo, state["customer_id"])
     method = state["collected_data"]["rmd_method"]
@@ -1463,54 +1205,6 @@ def _persist_distribution(state, repo):
         account_id=d["account_id"], kind="qualified", amount=d["amount"],
         idempotency_key=_idempotency_key(state, "persist_distribution"),
         extra_payload={"method": d["method"], "federal_pct": d["federal_pct"]},
-    )
-    return {"request_id": res.request_id}
-
-
-def _persist_mfa(state, repo):
-    d = state["collected_data"]["mfa_action"]
-    if d.get("action") == "remove":
-        res = repo.remove_mfa_device(
-            customer_id=state["customer_id"], thread_id=state.get("thread_id"),
-            device_id=d["device_id"],
-            idempotency_key=_idempotency_key(state, "persist_mfa_remove"),
-        )
-    else:
-        enroll = state["collected_data"].get("mfa_enroll", {})
-        res = repo.enroll_mfa_device(
-            customer_id=state["customer_id"], thread_id=state.get("thread_id"),
-            kind=enroll["kind"], label=enroll["label"], contact=enroll.get("contact"),
-            idempotency_key=_idempotency_key(state, "persist_mfa_enroll"),
-        )
-    return {"request_id": res.request_id}
-
-
-def _persist_delivery_prefs(state, repo):
-    d = state["collected_data"]["delivery_prefs"]
-    res = repo.update_delivery_prefs(
-        customer_id=state["customer_id"], thread_id=state.get("thread_id"),
-        paperless_statements=d["paperless_statements"],
-        paperless_tax=d["paperless_tax"],
-        marketing_email=d["marketing_email"],
-        idempotency_key=_idempotency_key(state, "persist_delivery_prefs"),
-    )
-    return {"request_id": res.request_id}
-
-
-def _persist_password_reset(state, repo):
-    res, masked = repo.request_password_reset(
-        customer_id=state["customer_id"], thread_id=state.get("thread_id"),
-        idempotency_key=_idempotency_key(state, "persist_password_reset"),
-    )
-    return {"request_id": res.request_id, "email_masked": masked}
-
-
-def _persist_statement(state, repo):
-    pick = state["collected_data"]["statement_pick"]
-    res = repo.create_statement_request(
-        customer_id=state["customer_id"], thread_id=state.get("thread_id"),
-        account_id=pick["account_id"], kind=pick["kind"], period=pick["period"],
-        idempotency_key=_idempotency_key(state, "persist_statement"),
     )
     return {"request_id": res.request_id}
 
@@ -1723,13 +1417,6 @@ INTENT_PLANS: dict[str, list[dict[str, Any]]] = {
         _persist_only("persist_cancel", _persist_cancel),
         _success_step("success_cancel", _success_cancel),
     ],
-    "download_statement": [
-        {"name": "pick_statement", "kind": "collect", "card_factory": _statement_picker,
-         "validator": _validate_statement_pick, "collector": _collect_statement_pick, "persister": None,
-         "requires_verified": False},
-        _persist_only("persist_statement", _persist_statement, requires_verified=False),
-        _success_step("show_link", _document_link),
-    ],
     "change_contribution": [
         _verify_step(), _otp_step(),
         {"name": "collect_contribution", "kind": "collect", "card_factory": _contribution_form,
@@ -1771,21 +1458,6 @@ INTENT_PLANS: dict[str, list[dict[str, Any]]] = {
         _persist_only("persist_rmd", _persist_rmd),
         _success_step("success_rmd", _success_rmd),
     ],
-    "request_loan": [
-        _verify_step(), _otp_step(),
-        {"name": "show_quote", "kind": "collect", "card_factory": _loan_quote,
-         "validator": _validate_acknowledge, "collector": None, "persister": None,
-         "requires_verified": True},
-        {"name": "collect_loan", "kind": "collect", "card_factory": _loan_request_form,
-         "validator": _validate_loan_request, "collector": _collect_loan_request, "persister": None,
-         "requires_verified": True},
-        _confirm_step("confirm_loan", _confirmation_loan),
-        _persist_only("persist_loan", _persist_loan),
-        _success_step("success_loan", _success_loan),
-    ],
-    "loan_status": [
-        _success_step("show_loans", _loan_status),
-    ],
     "qualified_distribution": [
         _verify_step(), _otp_step(),
         {"name": "collect_distribution", "kind": "collect", "card_factory": _distribution_request_form,
@@ -1817,33 +1489,6 @@ INTENT_PLANS: dict[str, list[dict[str, Any]]] = {
         _confirm_step("confirm_bank_default", _confirmation_bank_default),
         _persist_only("persist_bank_verify", _persist_bank_verify),
         _success_step("success_bank", _success_bank),
-    ],
-    "manage_mfa": [
-        _verify_step(), _otp_step(),
-        {"name": "list_devices", "kind": "collect", "card_factory": _mfa_device_list,
-         "validator": _validate_mfa_action, "collector": _collect_mfa_action, "persister": None,
-         "requires_verified": True},
-        # Only show enrollment form when action == 'enroll'
-        {"name": "enroll_form", "kind": "collect", "card_factory": _mfa_enroll_form,
-         "validator": _validate_mfa_enroll, "collector": _collect_mfa_enroll, "persister": None,
-         "requires_verified": True,
-         "skip_if": lambda s: (s.get("collected_data") or {}).get("mfa_action", {}).get("action") != "enroll"},
-        _confirm_step("confirm_mfa", _confirmation_mfa),
-        _persist_only("persist_mfa", _persist_mfa),
-        _success_step("success_mfa", _success_mfa),
-    ],
-    "delivery_preferences": [
-        {"name": "collect_delivery_prefs", "kind": "collect", "card_factory": _delivery_prefs_form,
-         "validator": None, "collector": _collect_delivery_prefs, "persister": None,
-         "requires_verified": False},
-        _confirm_step("confirm_delivery_prefs", _confirmation_delivery_prefs, requires_verified=False),
-        _persist_only("persist_delivery_prefs", _persist_delivery_prefs, requires_verified=False),
-        _success_step("success_delivery_prefs", _success_delivery_prefs),
-    ],
-    "reset_password": [
-        _verify_step(),
-        _persist_only("persist_password_reset", _persist_password_reset, requires_verified=False),
-        _success_step("show_reset_link", _password_reset_link),
     ],
     # ---------- Tier 3: specialist-routed ----------
     "hardship_withdrawal": [
@@ -1897,14 +1542,8 @@ INTENT_SUCCESS_MESSAGES: dict[str, str] = {
     "view_transactions": "Here are your recent transactions.",
     "check_request_status": "Here are your recent requests.",
     "cancel_request": "Your request has been cancelled.",
-    "download_statement": "Your statement is ready.",
     "update_tax_withholding": "Your tax withholding has been updated.",
     "update_direct_deposit": "Your bank account has been added and verified.",
-    "manage_mfa": "Your MFA settings have been updated.",
-    "delivery_preferences": "Your delivery preferences have been updated.",
-    "reset_password": "A password reset link has been sent.",
-    "request_loan": "Your loan request has been submitted.",
-    "loan_status": "Here's your loan status.",
     "take_rmd": "Your RMD has been scheduled.",
     "qualified_distribution": "Your distribution has been requested.",
     "hardship_withdrawal": "Your hardship request has been routed.",

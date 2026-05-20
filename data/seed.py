@@ -81,17 +81,6 @@ def _insert_customer(conn, c):
         """,
         (c["id"],),
     )
-    # Two enrolled MFA devices per customer so the remove-flow demo has options.
-    conn.executemany(
-        """
-        INSERT INTO mfa_devices (id, customer_id, kind, label, contact, enrolled_at, last_used_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-        """,
-        [
-            (f"mfa-{c['id']}-sms", c["id"], "sms", "Primary phone", c["phone"], "2024-02-12T09:14:00Z", "2026-05-17T08:01:00Z"),
-            (f"mfa-{c['id']}-totp", c["id"], "totp", "Authenticator app", None, "2024-09-30T12:00:00Z", "2026-05-16T18:42:00Z"),
-        ],
-    )
     # One pending request so check_request_status / cancel_request demos have data.
     conn.execute(
         """
@@ -191,10 +180,6 @@ def _seed_demo_002(conn):
     conn.execute(
         "INSERT INTO contributions (id, account_id, contribution_pct, employer_match_pct, effective_date) VALUES (?,?,?,?,?)",
         ("con-002a", "acc-002a", 8.0, 4.0, "2026-01-01"),
-    )
-    conn.execute(
-        "INSERT INTO loans (id, account_id, principal, interest_rate, term_months, outstanding, status, next_payment_due) VALUES (?,?,?,?,?,?,?,?)",
-        ("loan-002a", "acc-002a", 18000.00, 7.5, 60, 12450.30, "active", "2026-05-15"),
     )
     conn.executemany(
         "INSERT INTO transactions (id, account_id, txn_date, txn_type, amount, fund_ticker, description) VALUES (?,?,?,?,?,?,?)",

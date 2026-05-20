@@ -17,6 +17,7 @@ import streamlit as st
 
 from ui.card_models import (
     AddressFormCard,
+    AllocationFormCard,
     BalanceViewCard,
     BankAccountFormCard,
     BeneficiaryFormCard,
@@ -24,25 +25,16 @@ from ui.card_models import (
     Card,
     ConfirmationCard,
     ContributionFormCard,
-    DeliveryPrefsFormCard,
     DistributionMethodCard,
     DistributionRequestFormCard,
-    DocumentLinkCard,
     DriftViewCard,
     EmailFormCard,
     HardshipReasonFormCard,
     IdentityVerificationCard,
-    LoanQuoteCard,
-    LoanRequestFormCard,
-    LoanStatusCard,
-    MfaDeviceListCard,
-    MfaEnrollFormCard,
     MicroDepositCard,
     NameFormCard,
     NotImplementedCard,
-    AllocationFormCard,
     OtpCard,
-    PasswordResetLinkCard,
     PhoneFormCard,
     QdroIntakeFormCard,
     RequestListCard,
@@ -50,7 +42,6 @@ from ui.card_models import (
     RolloverInFormCard,
     RolloverOutFormCard,
     SpecialistRoutingCard,
-    StatementPickerCard,
     SuccessCard,
     TaxWithholdingFormCard,
     TransactionHistoryCard,
@@ -83,19 +74,10 @@ DEFAULT_ICONS: dict[str, str] = {
     "tax_withholding_form": "receipt",
     "bank_account_form": "account_balance_wallet",
     "microdeposit": "published_with_changes",
-    "loan_quote": "request_quote",
-    "loan_request_form": "request_quote",
-    "loan_status": "request_quote",
     "rmd_amount": "payments",
     "distribution_method": "payments",
     "distribution_request_form": "payments",
-    "mfa_device_list": "security",
-    "mfa_enroll_form": "security",
-    "delivery_prefs_form": "mail_lock",
-    "password_reset_link": "lock_reset",
     "request_list": "list_alt",
-    "document_link": "description",
-    "statement_picker": "description",
     "hardship_form": "emergency",
     "rollover_out_form": "swap_horiz",
     "rollover_in_form": "swap_horiz",
@@ -149,9 +131,9 @@ def _submit_cancel_row(submit_label: str) -> tuple[bool, bool]:
 # In readonly mode the card body is shown but interactive buttons are suppressed —
 # used when re-displaying dismissed terminal cards in the chat history.
 _READONLY_CAPABLE: frozenset[str] = frozenset({
-    "balance_view", "transaction_history", "loan_status", "request_list",
-    "document_link", "success", "specialist_routing", "password_reset_link",
-    "not_implemented", "rmd_amount", "loan_quote", "drift_view",
+    "balance_view", "transaction_history", "request_list",
+    "success", "specialist_routing",
+    "not_implemented", "rmd_amount", "drift_view",
 })
 
 
@@ -183,19 +165,10 @@ def render_card(card: Card, key: str, readonly: bool = False) -> dict[str, Any] 
         "tax_withholding_form": _render_tax_withholding,
         "bank_account_form": _render_bank_account,
         "microdeposit": _render_microdeposit,
-        "loan_quote": _render_loan_quote,
-        "loan_request_form": _render_loan_request,
-        "loan_status": _render_loan_status,
         "rmd_amount": _render_rmd_amount,
         "distribution_method": _render_distribution_method,
         "distribution_request_form": _render_distribution_request,
-        "mfa_device_list": _render_mfa_device_list,
-        "mfa_enroll_form": _render_mfa_enroll,
-        "delivery_prefs_form": _render_delivery_prefs,
-        "password_reset_link": _render_password_reset_link,
         "request_list": _render_request_list,
-        "document_link": _render_document_link,
-        "statement_picker": _render_statement_picker,
         "hardship_form": _render_hardship,
         "rollover_out_form": _render_rollover_out,
         "rollover_in_form": _render_rollover_in,
@@ -704,49 +677,6 @@ def _render_request_list(card: RequestListCard, key: str, readonly: bool = False
     return None
 
 
-def _render_document_link(card: DocumentLinkCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            st.success(f"Your {card.kind.replace('_', ' ')} for {card.period} is ready.")
-            st.markdown(
-                f"**File:** `{html.escape(card.file_path)}`  \n"
-                f"**Generated:** {html.escape(card.generated_at)}"
-            )
-            st.caption("In production, this card would render a signed download link.")
-            if not readonly:
-                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                    return {"_acknowledged": True}
-    return None
-
-
-def _render_statement_picker(card: StatementPickerCard, key: str) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            with st.form(key, clear_on_submit=False):
-                if not card.accounts:
-                    st.warning("No accounts on file.")
-                    return None
-                acct = st.selectbox(
-                    "Account",
-                    options=[a["id"] for a in card.accounts],
-                    format_func=lambda aid: next(a["label"] for a in card.accounts if a["id"] == aid),
-                )
-                kind = st.selectbox(
-                    "Document type",
-                    options=card.kinds,
-                    format_func=lambda k: k.replace("_", " ").title(),
-                )
-                period = st.selectbox("Period", options=card.periods)
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {"account_id": acct, "kind": kind, "period": period}
-    return None
-
-
 # ---------- tax / banking ----------
 
 def _render_tax_withholding(card: TaxWithholdingFormCard, key: str) -> dict[str, Any] | None:
@@ -943,207 +873,6 @@ def _render_distribution_request(card: DistributionRequestFormCard, key: str) ->
                     "method": method,
                     "federal_pct": float(fed_pct),
                 }
-    return None
-
-
-def _render_loan_quote(card: LoanQuoteCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            st.markdown(
-                f"""
-                <div class="rs-hero">
-                  <div class="rs-hero-label">Maximum loan</div>
-                  <div class="rs-hero-metric">${card.max_loan_amount:,.2f}</div>
-                  <div class="rs-hero-sub">Based on ${card.vested_balance:,.2f} vested · {card.suggested_rate_pct:.2f}% rate</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if not readonly:
-                with st.form(key, clear_on_submit=False):
-                    submitted, cancelled = _submit_cancel_row(card.submit_label)
-                if cancelled:
-                    return {"_cancelled": True}
-                if submitted:
-                    return {"_acknowledged": True}
-    return None
-
-
-def _render_loan_request(card: LoanRequestFormCard, key: str) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            with st.form(key, clear_on_submit=False):
-                acct = st.selectbox(
-                    "Account",
-                    options=[a["id"] for a in card.accounts],
-                    format_func=lambda aid: next(a["label"] for a in card.accounts if a["id"] == aid),
-                )
-                amount = st.number_input(
-                    "Loan amount ($)",
-                    min_value=1000.0,
-                    max_value=float(card.max_amount),
-                    step=500.0,
-                    value=min(10000.0, float(card.max_amount)),
-                    format="%.2f",
-                )
-                term = st.selectbox("Term", [12, 24, 36, 48, 60], index=4)
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {
-                    "account_id": acct,
-                    "amount": float(amount),
-                    "term_months": int(term),
-                }
-    return None
-
-
-def _render_loan_status(card: LoanStatusCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            if not card.loans:
-                st.info("You don't have any active loans.")
-            else:
-                for loan in card.loans:
-                    st.markdown(
-                        f"""
-                        <div class="rs-account-card">
-                          <div class="rs-account-plan">{html.escape(loan["plan_name"])}</div>
-                          <div class="rs-account-tag">{html.escape(loan["status"])}</div>
-                          <div class="rs-account-balance">${loan["outstanding"]:,.2f} outstanding</div>
-                          <div class="rs-account-vested">
-                            Principal ${loan["principal"]:,.2f} · {loan["interest_rate"]:.2f}% · {loan["term_months"]} mo
-                            <br/>Next payment due {html.escape(loan["next_payment_due"] or "—")}
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            if not readonly:
-                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                    return {"_acknowledged": True}
-    return None
-
-
-# ---------- security / preferences ----------
-
-def _render_mfa_device_list(card: MfaDeviceListCard, key: str) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            if not card.devices:
-                st.info("No MFA devices enrolled yet.")
-            else:
-                rows_html = ""
-                for d in card.devices:
-                    rows_html += (
-                        '<div class="rs-list-row">'
-                        f'<div><div class="rs-list-title">{html.escape(d["label"])}</div>'
-                        f'<div class="rs-list-meta">{html.escape(d["kind"].upper())}'
-                        f' · enrolled {html.escape(d["enrolled_at"][:10])}'
-                        f'{" · last used " + html.escape(d["last_used_at"][:10]) if d.get("last_used_at") else ""}</div></div>'
-                        f'<span class="rs-status-pill rs-status-completed">active</span>'
-                        "</div>"
-                    )
-                st.markdown(rows_html, unsafe_allow_html=True)
-            with st.form(key, clear_on_submit=False):
-                action = st.radio(
-                    "What would you like to do?",
-                    ["enroll", "remove"] if card.devices else ["enroll"],
-                    horizontal=True,
-                    format_func=lambda v: "Enroll a new device" if v == "enroll" else "Remove a device",
-                )
-                remove_id = None
-                if action == "remove" and card.devices:
-                    remove_id = st.selectbox(
-                        "Device to remove",
-                        options=[d["id"] for d in card.devices],
-                        format_func=lambda did: next(d["label"] for d in card.devices if d["id"] == did),
-                    )
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {"action": action, "device_id": remove_id}
-    return None
-
-
-def _render_mfa_enroll(card: MfaEnrollFormCard, key: str) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            with st.form(key, clear_on_submit=False):
-                kind = st.selectbox(
-                    "Device type",
-                    ["sms", "totp", "hardware"],
-                    format_func=lambda k: {"sms": "SMS code", "totp": "Authenticator app", "hardware": "Hardware key"}[k],
-                )
-                label = st.text_input("Device label", placeholder="iPhone 15 / Authy / YubiKey-2")
-                contact = ""
-                if kind == "sms":
-                    contact = st.text_input("Phone number for SMS", placeholder="555-555-5555")
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                if not label.strip():
-                    st.warning("Device label is required.")
-                    return None
-                if kind == "sms":
-                    digits = "".join(c for c in contact if c.isdigit())
-                    if len(digits) != 10:
-                        st.warning("Enter a valid 10-digit phone number.")
-                        return None
-                return {"kind": kind, "label": label.strip(), "contact": contact.strip() or None}
-    return None
-
-
-def _render_delivery_prefs(card: DeliveryPrefsFormCard, key: str) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            p = card.prefilled
-            with st.form(key, clear_on_submit=False):
-                paperless_statements = st.checkbox(
-                    "Paperless statements (recommended)",
-                    value=bool(p.get("paperless_statements", True)),
-                )
-                paperless_tax = st.checkbox(
-                    "Paperless tax forms",
-                    value=bool(p.get("paperless_tax", False)),
-                )
-                marketing_email = st.checkbox(
-                    "Marketing email about new features",
-                    value=bool(p.get("marketing_email", True)),
-                )
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
-            if cancelled:
-                return {"_cancelled": True}
-            if submitted:
-                return {
-                    "paperless_statements": bool(paperless_statements),
-                    "paperless_tax": bool(paperless_tax),
-                    "marketing_email": bool(marketing_email),
-                }
-    return None
-
-
-def _render_password_reset_link(card: PasswordResetLinkCard, key: str, readonly: bool = False) -> dict[str, Any] | None:
-    with st.chat_message("assistant"):
-        with st.container(border=True):
-            _card_header(card)
-            st.success(f"We've sent a reset link to **{card.email_masked}**.")
-            st.caption(
-                "The link expires in 30 minutes. If you don't receive it, check your spam folder or "
-                "call us at 1-800-555-7483."
-            )
-            if not readonly:
-                if st.button(card.submit_label, key=f"{key}-done", type="primary"):
-                    return {"_acknowledged": True}
     return None
 
 

@@ -123,29 +123,6 @@ def test_cancel_request_full_flow():
     assert repo.get_request(target_id)["status"] == "cancelled"
 
 
-def test_download_statement_full_flow_no_verify():
-    g, repo, config, tid = _new_graph_and_config()
-    snap = _walk(g, {
-        "customer_id": "demo-001", "thread_id": tid,
-        "messages": [{"role": "user", "content": "download my statement"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    assert snap.values["intent"] == "download_statement"
-    assert _is_paused(snap)
-    assert snap.values["pending_card"].card_type == "statement_picker"
-
-    accounts = snap.values["pending_card"].accounts
-    snap = _walk(g, Command(resume={
-        "account_id": accounts[0]["id"],
-        "kind": "statement_quarterly",
-        "period": "2026 Q1",
-    }), config)
-    final = snap.values.get("final_card")
-    assert final is not None and final.card_type == "document_link"
-    # A `download_statement` request row should exist
-    assert any(r["type"] == "download_statement" for r in repo.list_requests("demo-001"))
-
-
 # ------------------------------------------------------------------
 # Contact updates
 # ------------------------------------------------------------------
@@ -389,43 +366,8 @@ def test_rebalance_full_flow():
 
 
 # ------------------------------------------------------------------
-# Loans / distributions
+# Distributions
 # ------------------------------------------------------------------
-
-def test_request_loan_full_flow():
-    g, repo, config, tid = _new_graph_and_config()
-    customer = repo.get_customer("demo-001")
-    snap = _walk(g, {
-        "customer_id": "demo-001", "thread_id": tid,
-        "messages": [{"role": "user", "content": "I want to request a loan"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    snap = _verify_otp(g, config, customer)
-    # Loan quote (inform-style collect)
-    assert snap.values["pending_card"].card_type == "loan_quote"
-    snap = _walk(g, Command(resume={"_acknowledged": True}), config)
-    assert snap.values["pending_card"].card_type == "loan_request_form"
-    accts = snap.values["pending_card"].accounts
-    snap = _walk(g, Command(resume={
-        "account_id": accts[0]["id"], "amount": 5000.0, "term_months": 60,
-    }), config)
-    snap = _walk(g, Command(resume={"_confirmed": True}), config)
-    assert snap.values.get("final_card").card_type == "success"
-    assert any(r["type"] == "request_loan" for r in repo.list_requests("demo-001"))
-
-
-def test_loan_status_read_only():
-    g, repo, config, tid = _new_graph_and_config()
-    snap = _walk(g, {
-        "customer_id": "demo-002", "thread_id": tid,
-        "messages": [{"role": "user", "content": "what's my loan status?"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    assert snap.values.get("intent") == "loan_status"
-    final = snap.values.get("final_card")
-    assert final is not None and final.card_type == "loan_status"
-    assert len(final.loans) >= 1
-
 
 def test_take_rmd_full_flow():
     g, repo, config, tid = _new_graph_and_config()
@@ -464,105 +406,6 @@ def test_qualified_distribution_full_flow():
     }), config)
     snap = _walk(g, Command(resume={"_confirmed": True}), config)
     assert snap.values.get("final_card").card_type == "success"
-
-
-# ------------------------------------------------------------------
-# Security / preferences
-# ------------------------------------------------------------------
-
-def test_manage_mfa_enroll_full_flow():
-    g, repo, config, tid = _new_graph_and_config()
-    customer = repo.get_customer("demo-001")
-    snap = _walk(g, {
-        "customer_id": "demo-001", "thread_id": tid,
-        "messages": [{"role": "user", "content": "manage MFA"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    snap = _verify_otp(g, config, customer)
-    assert snap.values["pending_card"].card_type == "mfa_device_list"
-    snap = _walk(g, Command(resume={"action": "enroll", "device_id": None}), config)
-    assert snap.values["pending_card"].card_type == "mfa_enroll_form"
-    snap = _walk(g, Command(resume={
-        "kind": "totp", "label": "1Password", "contact": None,
-    }), config)
-    snap = _walk(g, Command(resume={"_confirmed": True}), config)
-    assert snap.values.get("final_card").card_type == "success"
-    assert any(d["label"] == "1Password" for d in repo.list_mfa_devices("demo-001"))
-
-
-def test_manage_mfa_remove_skips_enroll_form():
-    g, repo, config, tid = _new_graph_and_config()
-    customer = repo.get_customer("demo-001")
-    snap = _walk(g, {
-        "customer_id": "demo-001", "thread_id": tid,
-        "messages": [{"role": "user", "content": "manage authenticator"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    snap = _verify_otp(g, config, customer)
-    assert snap.values["pending_card"].card_type == "mfa_device_list"
-    devices = snap.values["pending_card"].devices
-    target = devices[0]["id"]
-    snap = _walk(g, Command(resume={"action": "remove", "device_id": target}), config)
-    # Should skip the enrollment form
-    assert _is_paused(snap)
-    assert snap.values["pending_card"].card_type == "confirmation"
-    snap = _walk(g, Command(resume={"_confirmed": True}), config)
-    assert snap.values.get("final_card").card_type == "success"
-    still_active = repo.list_mfa_devices("demo-001")
-    assert all(d["id"] != target for d in still_active)
-
-
-def test_mfa_remove_last_device_blocked():
-    """Policy guard: cannot remove the only active MFA device."""
-    repo = Repository(get_db())
-    # Remove one of demo-003's two devices directly so only one remains, then attempt to remove the last
-    devices = repo.list_mfa_devices("demo-003")
-    repo.remove_mfa_device(
-        customer_id="demo-003", thread_id=None,
-        device_id=devices[0]["id"], idempotency_key="t-prep",
-    )
-    remaining = repo.list_mfa_devices("demo-003")
-    assert len(remaining) == 1
-    with pytest.raises(ValueError, match="only active MFA device"):
-        repo.remove_mfa_device(
-            customer_id="demo-003", thread_id=None,
-            device_id=remaining[0]["id"], idempotency_key="t-final",
-        )
-
-
-def test_delivery_preferences_no_verify_flow():
-    """Delivery prefs is the only profile change that doesn't require identity verification."""
-    g, repo, config, tid = _new_graph_and_config()
-    snap = _walk(g, {
-        "customer_id": "demo-002", "thread_id": tid,
-        "messages": [{"role": "user", "content": "paperless preferences"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    # Should go straight to the delivery_prefs_form (no identity verification)
-    assert _is_paused(snap)
-    assert snap.values["pending_card"].card_type == "delivery_prefs_form"
-    snap = _walk(g, Command(resume={
-        "paperless_statements": False, "paperless_tax": True, "marketing_email": False,
-    }), config)
-    snap = _walk(g, Command(resume={"_confirmed": True}), config)
-    assert snap.values.get("final_card").card_type == "success"
-    prefs = repo.get_delivery_prefs("demo-002")
-    assert prefs["paperless_tax"] == 1
-    assert prefs["marketing_email"] == 0
-
-
-def test_reset_password_flow():
-    g, repo, config, tid = _new_graph_and_config()
-    customer = repo.get_customer("demo-002")
-    snap = _walk(g, {
-        "customer_id": "demo-002", "thread_id": tid,
-        "messages": [{"role": "user", "content": "reset my password"}],
-        "verified": False, "collected_data": {},
-    }, config)
-    snap = _walk(g, Command(resume={"dob": customer["dob"], "ssn_last4": customer["ssn_last4"]}), config)
-    final = snap.values.get("final_card")
-    assert final is not None and final.card_type == "password_reset_link"
-    assert "@" in final.email_masked
 
 
 # ------------------------------------------------------------------

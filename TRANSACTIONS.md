@@ -1,6 +1,6 @@
 # Supported Transactions
 
-The Meridian Retirement agent facilitates **27 distinct transactions** across six retirement-account domains. Each transaction has a real step plan (`verify → otp → collect → confirm → persist → inform`) — there are no "not implemented" stubs.
+The Meridian Retirement agent facilitates **21 distinct transactions** across six retirement-account domains. Each transaction has a real step plan (`verify → otp → collect → confirm → persist → inform`) — there are no "not implemented" stubs.
 
 Example phrases in *italics* are recognized by the regex prefilter; anything else falls through to the Azure-hosted LLM, which picks the matching intent via its `start_workflow` tool.
 
@@ -22,13 +22,12 @@ Example phrases in *italics* are recognized by the regex prefilter; anything els
 | **Add a beneficiary** | Verify → OTP → form (pick account, name, relationship, allocation) → confirm | *"add a beneficiary"* |
 | **Update / remove a beneficiary** | Verify → OTP → picker → branches via `skip_if` into edit form OR removal confirm | *"update my beneficiaries"*, *"remove a beneficiary"* |
 
-## Read-only & status (5)
+## Read-only & status (4)
 
 | Intent | What happens | Example |
 |---|---|---|
 | **Check balance** | Hero card with portfolio total + vested + pastel-tinted account grid | *"what's my balance?"* |
 | **View transactions** | Last 20 entries with filter chips (All / Contributions / Distributions / Dividends / Fees) | *"show my transactions"* |
-| **Download statement** | Pick account, kind (statement / 1099-R / 1099-Q), period → mocked link card | *"download my statement"* |
 | **Check request status** | List of pending / completed / cancelled requests with status pills | *"what's the status of my requests?"* |
 | **Cancel a pending request** | Verify → OTP → pick → confirm → flips status to `cancelled`, audit-logged | *"cancel my request"* |
 
@@ -40,13 +39,11 @@ Example phrases in *italics* are recognized by the regex prefilter; anything els
 | **Change investment allocation** | Per-fund sliders, must-sum-to-100 validator, writes `investments.target_allocation_pct` | *"change my allocation"* |
 | **Rebalance portfolio** | Computes drift, shows per-fund trade plan, writes a pending `rebalance` request | *"rebalance my portfolio"* |
 
-## Distributions & withdrawals (8)
+## Distributions & withdrawals (6)
 
 | Intent | What happens | Example |
 |---|---|---|
 | **Take RMD** | Computes required amount from age + balance, pick method (bank / check), tax withholding | *"take my RMD"* |
-| **Request a loan** | Shows max loan + rate, pick amount and term, writes a pending `loans` row | *"request a loan"* |
-| **Check loan status** | Outstanding balance, rate, term, next payment due | *"what's my loan status?"* |
 | **Qualified distribution** | Pick account, amount, method, federal withholding → writes a `distributions` row | *"qualified distribution"* |
 | **Hardship withdrawal** ⚠ | Reason + mock document upload → specialist-routed; pending `requests` row with `routing_target='specialist_review'` | *"hardship withdrawal"* |
 | **Roll over OUT** ⚠ | Destination plan + amount + direct/indirect method → specialist-routed | *"roll over my 401k to another plan"* |
@@ -55,15 +52,12 @@ Example phrases in *italics* are recognized by the regex prefilter; anything els
 
 ⚠ = compliance-heavy; the flow ends with a `SpecialistRoutingCard` and a `requests` row that becomes visible later via *check request status*.
 
-## Tax, banking & security (5)
+## Tax & banking (2)
 
 | Intent | What happens | Example |
 |---|---|---|
 | **Update tax withholding** | Pick account + year, federal/state % sliders → upserts `tax_withholding` | *"update my federal tax withholding"* |
 | **Update direct deposit** | Bank-account form → mocked micro-deposit verification (0.12 / 0.34) → activates + can set default | *"update direct deposit"* |
-| **Manage MFA** | List devices → branches via `skip_if` into enroll OR remove; last-active-device guard | *"manage MFA"* |
-| **Delivery preferences** | Toggle paperless statements / paperless tax / marketing email (no identity verification required) | *"paperless preferences"* |
-| **Reset password** | Verify identity → mocked reset link to masked email | *"reset my password"* |
 
 ---
 
@@ -77,4 +71,4 @@ All three seeded demo customers share the same **OTP code: `123456`**.
 | `demo-002` | Tyler Rodriguez | 1989-08-23 | 4321 |
 | `demo-003` | Nina Patel | 1996-11-04 | 1122 |
 
-Each customer is pre-seeded with two active MFA devices and one pending `change_phone` request so the *manage MFA* (remove path) and *cancel request* flows have something to act on. Tyler also has an active loan so *loan status* is non-empty.
+Each customer is pre-seeded with one pending `change_phone` request so the *cancel request* flow has something to act on.
