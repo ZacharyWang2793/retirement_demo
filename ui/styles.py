@@ -254,6 +254,35 @@ div[data-testid="stNotification"][kind="error"] {
     color: var(--rs-ink) !important;
 }
 
+/* ---------- Remove-fund button (allocation form) ---------- */
+.rs-rm-btn .stButton button {
+    background: transparent !important;
+    border: 1px solid var(--rs-border-strong) !important;
+    color: var(--rs-ink-3) !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.rs-rm-btn .stButton button p,
+.rs-rm-btn .stButton button span,
+.rs-rm-btn .stButton button div { color: var(--rs-ink-3) !important; }
+.rs-rm-btn .stButton button:hover {
+    background: #FEE2E2 !important;
+    border-color: #DC2626 !important;
+    color: #DC2626 !important;
+}
+.rs-rm-btn .stButton button:hover p,
+.rs-rm-btn .stButton button:hover span,
+.rs-rm-btn .stButton button:hover div { color: #DC2626 !important; }
+
 /* ---------- Hero metric (balance, RMD, loan quote) ---------- */
 .rs-hero {
     background: var(--rs-yellow-lt);

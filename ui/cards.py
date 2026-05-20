@@ -117,11 +117,13 @@ def _card_header(card: Card) -> None:
         st.error(card.error)
 
 
-def _submit_cancel_row(submit_label: str) -> tuple[bool, bool]:
+def _submit_cancel_row(submit_label: str, *, submit_disabled: bool = False) -> tuple[bool, bool]:
     """Return (submitted, cancelled). 2:1 column split (primary wider)."""
     col1, col2 = st.columns([2, 1])
     with col1:
-        submitted = st.form_submit_button(submit_label, type="primary", use_container_width=True)
+        submitted = st.form_submit_button(
+            submit_label, type="primary", use_container_width=True, disabled=submit_disabled
+        )
     with col2:
         cancelled = st.form_submit_button("Cancel", use_container_width=True)
     return submitted, cancelled
@@ -462,8 +464,12 @@ def _render_contribution(card: ContributionFormCard, key: str) -> dict[str, Any]
                     format_func=lambda aid: next(a["label"] for a in card.accounts if a["id"] == aid),
                 )
                 current = next((a["current_pct"] for a in card.accounts if a["id"] == acct), 0.0)
-                st.caption(f"Current contribution: **{current:.1f}%**")
+                st.caption(f"Current contribution: **{current:.1f}%** of gross pay")
                 new_pct = st.slider("New contribution %", 0.0, 100.0, float(current), 0.5)
+                if new_pct == 0.0:
+                    st.warning("⚠ Setting to 0% will stop contributions to this account.")
+                else:
+                    st.caption(f"Take-home effect: **{100.0 - new_pct:.1f}%** of gross pay reaches your paycheck (before taxes).")
                 submitted, cancelled = _submit_cancel_row(card.submit_label)
             if cancelled:
                 return {"_cancelled": True}
@@ -475,29 +481,94 @@ def _render_contribution(card: ContributionFormCard, key: str) -> dict[str, Any]
 # ---------- allocation / rebalance ----------
 
 def _render_allocation(card: AllocationFormCard, key: str) -> dict[str, Any] | None:
+    allocs_key = f"{key}_allocs"
+    if allocs_key not in st.session_state:
+        st.session_state[allocs_key] = [
+            {"ticker": f["ticker"], "name": f["name"],
+             "current_pct": f["current_pct"], "target_pct": f["target_pct"]}
+            for f in card.funds
+        ]
+    allocs: list[dict[str, Any]] = st.session_state[allocs_key]
+
     with st.chat_message("assistant"):
         with st.container(border=True):
             _card_header(card)
-            st.caption(
-                f"Account: **{card.account_label}**. Target allocations must sum to 100%."
-            )
-            with st.form(key, clear_on_submit=False):
-                pcts: dict[str, float] = {}
-                for f in card.funds:
+            st.caption(f"Account: **{card.account_label}** · Allocations must sum to 100%.")
+
+            # ── Fund rows (outside form so sliders update total live) ─────────
+            pcts: dict[str, float] = {}
+            for i, f in enumerate(allocs):
+                sl_col, rm_col = st.columns([11, 1])
+                with sl_col:
                     pcts[f["ticker"]] = st.slider(
                         f"{f['name']} ({f['ticker']}) — current {f['current_pct']:.1f}%",
                         0.0, 100.0, float(f["target_pct"]), 0.5,
-                        key=f"{key}-{f['ticker']}",
+                        key=f"{key}-sl-{f['ticker']}",
                     )
-                total = sum(pcts.values())
-                if abs(total - 100.0) < 0.05:
-                    st.success(f"Total: {total:.1f}%")
-                else:
-                    st.warning(f"Total: {total:.1f}% — must equal 100%.")
-                submitted, cancelled = _submit_cancel_row(card.submit_label)
+                with rm_col:
+                    st.write("")
+                    st.write("")
+                    st.markdown('<div class="rs-rm-btn">', unsafe_allow_html=True)
+                    if st.button("✕", key=f"{key}-rm-{f['ticker']}", help=f"Remove {f['ticker']}"):
+                        st.session_state[allocs_key].pop(i)
+                        st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            if not allocs:
+                st.caption("No funds in the list. Add one below to get started.")
+
+            # ── Live sum banner ───────────────────────────────────────────────
+            total = sum(pcts.values())
+            remaining = 100.0 - total
+            if abs(remaining) < 0.05:
+                st.success(f"Total: {total:.1f}% ✓ — ready to save")
+            elif remaining > 0:
+                st.warning(f"Total: {total:.1f}% — {remaining:.1f}% still unallocated")
+            else:
+                st.error(f"Total: {total:.1f}% — over by {-remaining:.1f}%")
+
+            # ── Add a fund ────────────────────────────────────────────────────
+            st.markdown("---")
+            with st.expander("➕  Add a fund"):
+                ac1, ac2, ac3 = st.columns([3, 2, 1])
+                with ac1:
+                    new_ticker = st.text_input(
+                        "Ticker symbol", key=f"{key}-new-ticker", placeholder="e.g. VTSAX",
+                    )
+                with ac2:
+                    new_pct = st.number_input(
+                        "Target %", min_value=0.0, max_value=100.0,
+                        value=0.0, step=0.5, format="%.1f",
+                        key=f"{key}-new-pct",
+                    )
+                with ac3:
+                    st.write("")
+                    st.write("")
+                    if st.button("Add", key=f"{key}-add-btn", use_container_width=True):
+                        ticker = new_ticker.strip().upper()
+                        existing = {a["ticker"] for a in st.session_state[allocs_key]}
+                        if not ticker:
+                            st.error("Enter a ticker symbol.")
+                        elif ticker in existing:
+                            st.error(f"{ticker} is already in the list.")
+                        else:
+                            st.session_state[allocs_key].append({
+                                "ticker": ticker, "name": ticker,
+                                "current_pct": 0.0, "target_pct": float(new_pct),
+                            })
+                            st.rerun()
+
+            # ── Submit form (disabled until total = 100%) ─────────────────────
+            with st.form(key, clear_on_submit=False):
+                submitted, cancelled = _submit_cancel_row(
+                    card.submit_label,
+                    submit_disabled=abs(remaining) >= 0.05,
+                )
             if cancelled:
+                st.session_state.pop(allocs_key, None)
                 return {"_cancelled": True}
             if submitted:
+                st.session_state.pop(allocs_key, None)
                 return {
                     "account_id": card.account_id,
                     "allocations": [{"ticker": t, "target_pct": p} for t, p in pcts.items()],

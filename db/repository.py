@@ -791,6 +791,13 @@ class Repository:
             before = {r["fund_ticker"]: r["target_allocation_pct"] for r in before_invs}
             after = {}
             for a in allocations:
+                # Insert the fund if it doesn't exist yet (user-added ticker)
+                cur.execute(
+                    "INSERT OR IGNORE INTO investments "
+                    "(id, account_id, fund_ticker, fund_name, shares, current_value, target_allocation_pct) "
+                    "VALUES (lower(hex(randomblob(16))), ?, ?, ?, 0.0, 0.0, 0.0)",
+                    (account_id, a["ticker"], a["ticker"]),
+                )
                 cur.execute(
                     "UPDATE investments SET target_allocation_pct = ? WHERE account_id = ? AND fund_ticker = ?",
                     (a["target_pct"], account_id, a["ticker"]),
