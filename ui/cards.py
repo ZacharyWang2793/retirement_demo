@@ -90,8 +90,27 @@ def _resolve_icon(card: Card) -> str:
     return card.icon or DEFAULT_ICONS.get(card.card_type, "circle")
 
 
+def _step_indicator_html(current: int, total: int) -> str:
+    """Numbered-bubble stepper: done = check, current = highlighted number, upcoming = hollow."""
+    parts: list[str] = []
+    for i in range(1, total + 1):
+        if i > 1:
+            line_cls = "rs-step-line done" if i <= current else "rs-step-line"
+            parts.append(f'<span class="{line_cls}"></span>')
+        if i < current:
+            parts.append(f'<span class="rs-step done">{icon_html("check", size=14)}</span>')
+        elif i == current:
+            parts.append(f'<span class="rs-step active">{i}</span>')
+        else:
+            parts.append(f'<span class="rs-step todo">{i}</span>')
+    return (
+        f'<div class="rs-stepper">{"".join(parts)}'
+        f'<span class="rs-step-label">Step {current} of {total}</span></div>'
+    )
+
+
 def _card_header(card: Card) -> None:
-    """Branded card header: icon + title + subtitle. Error/helper render below."""
+    """Branded card header: optional step indicator + icon + title + subtitle. Error/helper render below."""
     icon = _resolve_icon(card)
     title = html.escape(card.title)
     subtitle_html = (
@@ -99,8 +118,14 @@ def _card_header(card: Card) -> None:
         if card.subtitle
         else ""
     )
+    stepper_html = (
+        _step_indicator_html(card.current_step, card.total_steps)
+        if card.current_step and card.total_steps
+        else ""
+    )
     st.markdown(
         f"""
+        {stepper_html}
         <div class="rs-card-head">
           <span class="rs-card-icon">{icon_html(icon, size=22)}</span>
           <span class="rs-card-title-block">

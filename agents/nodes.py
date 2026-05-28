@@ -52,6 +52,10 @@ _REJECT_RE = _re.compile(
 
 
 def _is_confirmation(text: str) -> bool:
+    # A question (e.g. "ok but what's the 20% thing?") is a follow-up, not a yes —
+    # don't let an embedded "ok"/"sure" prematurely start the workflow.
+    if "?" in text:
+        return False
     return bool(_CONFIRM_RE.search(text)) and not bool(_REJECT_RE.search(text))
 
 
@@ -191,7 +195,7 @@ def _announcement(intent: str, routed_via: str, confidence: float | None, *, rea
     if reason:
         return reason
     label = INTENT_LABELS.get(intent, intent)
-    return f"I'll help you with that — starting {label.lower()} now."
+    return f"Sure — I'd be glad to help. Let's get started with {label.lower()}."
 
 
 # ---------- agent_node ----------
@@ -218,7 +222,7 @@ def agent_node(state: AgentState) -> dict[str, Any]:
                 "proposed_intent": None,
                 "intent_confidence": 1.0,
                 "routed_via": "confirmed",
-                "routing_announcement": f"Great — starting {label.lower()} now.",
+                "routing_announcement": f"Great — I'd be happy to help. Starting {label.lower()} now.",
             }
         elif _is_rejection(last_user):
             msg = AIMessage(content="No problem! Let me know if there's anything else I can help with.")
@@ -352,6 +356,34 @@ def _current_plan(state: AgentState):
     return INTENT_PLANS[intent]
 
 
+# Step kinds that render an interactive card the user must act on.
+_INPUT_KINDS = {"verify", "collect", "confirm"}
+
+
+def step_progress(plan: list[dict], state: AgentState, idx: int) -> tuple[int, int] | None:
+    """(position, total) over the input-bearing, non-skipped steps of the active plan.
+
+    Counts only steps that render an interactive card (verify/collect/confirm),
+    honoring the same skips render_step applies: already-verified verify steps and
+    any step whose skip_if(state) fires. Returns None when the current step isn't an
+    input step or the flow has fewer than 2 input steps (nothing worth numbering).
+    """
+    verified = state.get("verified")
+
+    def visible(step: dict) -> bool:
+        if step["kind"] not in _INPUT_KINDS:
+            return False
+        if step["kind"] == "verify" and verified:
+            return False
+        skip_if = step.get("skip_if")
+        return not (skip_if and skip_if(state))
+
+    visible_idxs = [i for i, s in enumerate(plan) if visible(s)]
+    if idx not in visible_idxs or len(visible_idxs) < 2:
+        return None
+    return visible_idxs.index(idx) + 1, len(visible_idxs)
+
+
 # ---------- workflow loop nodes (unchanged) ----------
 
 def render_step(state: AgentState, repo: Repository) -> dict[str, Any]:
@@ -391,9 +423,15 @@ def render_step(state: AgentState, repo: Repository) -> dict[str, Any]:
         # Persist step has no card; route to persist.
         return {"pending_card": None}
 
+    card_updates: dict[str, Any] = {}
     if state.get("last_error"):
+        card_updates["error"] = state["last_error"]
+    prog = step_progress(plan, state, idx)
+    if prog:
+        card_updates["current_step"], card_updates["total_steps"] = prog
+    if card_updates:
         try:
-            card = card.model_copy(update={"error": state["last_error"]})
+            card = card.model_copy(update=card_updates)
         except Exception:
             pass
 

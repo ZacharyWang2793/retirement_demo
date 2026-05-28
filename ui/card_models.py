@@ -30,6 +30,9 @@ class BaseCard(BaseModel):
     submit_label: str = "Save"
     error: str | None = None  # validation error from previous attempt
     icon: str | None = None  # Material Symbols name; renderer falls back to per-type default
+    # Step-counter (set centrally in render_step for multi-step transactions; None = hide).
+    current_step: int | None = None
+    total_steps: int | None = None
 
 
 # ---------- identity / otp ----------

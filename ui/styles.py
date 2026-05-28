@@ -217,6 +217,21 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-card-title { font-size: 17px; font-weight: 600; color: var(--rs-ink); }
 .rs-card-subtitle { font-size: 13px; color: var(--rs-ink-2); margin-top: 2px; }
 
+/* ---------- Step counter (multi-step transaction header) ---------- */
+.rs-stepper { display: flex; align-items: center; gap: 6px; margin: 0 0 12px 0; }
+.rs-step {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; line-height: 1; flex-shrink: 0;
+}
+.rs-step.done { background: var(--rs-primary); color: #fff; }
+.rs-step.active { background: var(--rs-primary); color: #fff; box-shadow: 0 0 0 3px rgba(30, 127, 216, 0.20); }
+.rs-step.todo { background: transparent; color: var(--rs-ink-3); border: 1.5px solid var(--rs-border); }
+.rs-step .material-symbols-outlined { font-size: 14px; font-weight: 700; }
+.rs-step-line { flex: 0 1 24px; height: 2px; min-width: 8px; background: var(--rs-border); border-radius: 1px; }
+.rs-step-line.done { background: var(--rs-primary); }
+.rs-step-label { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--rs-ink-2); white-space: nowrap; }
+
 /* ---------- Chips (quick actions empty state) ---------- */
 .rs-chip-row {
     display: flex; gap: 8px; flex-wrap: wrap;
