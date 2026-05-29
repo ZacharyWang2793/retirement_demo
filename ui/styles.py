@@ -110,7 +110,10 @@ header[data-testid="stHeader"] {
     font-weight: 500 !important;
     transition: background-color .12s ease, border-color .12s ease, transform .04s ease;
 }
-.stButton button[kind="primary"], .stButton button[kind="primaryFormSubmit"] {
+.stButton button[kind="primary"],
+.stButton button[kind="primaryFormSubmit"],
+[data-testid="stBaseButton-primary"],
+[data-testid="stFormSubmitButton"] button {
     background: var(--rs-primary) !important;
     border: 1px solid var(--rs-primary) !important;
     color: #FFFFFF !important;
@@ -121,10 +124,19 @@ header[data-testid="stHeader"] {
 .stButton button[kind="primary"] div,
 .stButton button[kind="primaryFormSubmit"] p,
 .stButton button[kind="primaryFormSubmit"] span,
-.stButton button[kind="primaryFormSubmit"] div {
+.stButton button[kind="primaryFormSubmit"] div,
+[data-testid="stBaseButton-primary"] p,
+[data-testid="stBaseButton-primary"] span,
+[data-testid="stBaseButton-primary"] div,
+[data-testid="stFormSubmitButton"] button p,
+[data-testid="stFormSubmitButton"] button span,
+[data-testid="stFormSubmitButton"] button div {
     color: #FFFFFF !important;
 }
-.stButton button[kind="primary"]:hover, .stButton button[kind="primaryFormSubmit"]:hover {
+.stButton button[kind="primary"]:hover,
+.stButton button[kind="primaryFormSubmit"]:hover,
+[data-testid="stBaseButton-primary"]:hover,
+[data-testid="stFormSubmitButton"] button:hover {
     background: var(--rs-primary-dk) !important;
     border-color: var(--rs-primary-dk) !important;
 }
@@ -218,19 +230,19 @@ div[data-testid="stNotification"][kind="error"] {
 .rs-card-subtitle { font-size: 13px; color: var(--rs-ink-2); margin-top: 2px; }
 
 /* ---------- Step counter (multi-step transaction header) ---------- */
-.rs-stepper { display: flex; align-items: center; gap: 6px; margin: 0 0 12px 0; }
+.rs-stepper { display: flex; align-items: center; gap: 8px; margin: 0 0 16px 0; }
 .rs-step {
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 32px; height: 32px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; line-height: 1; flex-shrink: 0;
+    font-size: 14px; font-weight: 700; line-height: 1; flex-shrink: 0;
 }
 .rs-step.done { background: var(--rs-primary); color: #fff; }
-.rs-step.active { background: var(--rs-primary); color: #fff; box-shadow: 0 0 0 3px rgba(30, 127, 216, 0.20); }
-.rs-step.todo { background: transparent; color: var(--rs-ink-3); border: 1.5px solid var(--rs-border); }
-.rs-step .material-symbols-outlined { font-size: 14px; font-weight: 700; }
-.rs-step-line { flex: 0 1 24px; height: 2px; min-width: 8px; background: var(--rs-border); border-radius: 1px; }
+.rs-step.active { background: var(--rs-primary); color: #fff; box-shadow: 0 0 0 4px rgba(30, 127, 216, 0.22); }
+.rs-step.todo { background: transparent; color: var(--rs-ink-3); border: 2px solid var(--rs-border); }
+.rs-step .material-symbols-outlined { font-size: 16px; font-weight: 700; }
+.rs-step-line { flex: 0 1 28px; height: 3px; min-width: 10px; background: var(--rs-border); border-radius: 2px; }
 .rs-step-line.done { background: var(--rs-primary); }
-.rs-step-label { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--rs-ink-2); white-space: nowrap; }
+.rs-step-label { margin-left: 10px; font-size: 13px; font-weight: 600; color: var(--rs-ink-2); white-space: nowrap; }
 
 /* ---------- Chips (quick actions empty state) ---------- */
 .rs-chip-row {

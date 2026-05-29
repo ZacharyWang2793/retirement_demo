@@ -98,7 +98,7 @@ def _step_indicator_html(current: int, total: int) -> str:
             line_cls = "rs-step-line done" if i <= current else "rs-step-line"
             parts.append(f'<span class="{line_cls}"></span>')
         if i < current:
-            parts.append(f'<span class="rs-step done">{icon_html("check", size=14)}</span>')
+            parts.append(f'<span class="rs-step done">{icon_html("check", size=18)}</span>')
         elif i == current:
             parts.append(f'<span class="rs-step active">{i}</span>')
         else:
