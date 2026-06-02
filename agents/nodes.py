@@ -1,41 +1,32 @@
-"""LangGraph nodes.
+"""Supervisor (orchestrator) node + shared helpers.
 
-The graph:
-    agent_node ─→ (text reply) ─→ END
-                ─→ (tool call)  ─→ plan_steps ─→ render_step ─→ await_input ─→ validate_step
-                                                                              ─→ persist_step
-                                                                              ─→ END (with success card)
+The supervisor's only jobs are: classify the user's intent (or chat / clarify /
+decline), route the resolved intent to the OWNING category subagent, and track the
+task ledger as subagents hand control back. It never executes workflow steps — that
+lives in ``agents/category_agent.py``.
 
-`agent_node` is the conversational entry point. It uses the Azure AI Foundry
-OpenAI client (via DefaultAzureCredential — no API key required) with a single
-`start_workflow` function tool. For unambiguous transaction phrasings the
-agent_node short-circuits via a regex prefilter, skipping the LLM entirely.
-Everything from `plan_steps` onward is unchanged.
+For unambiguous programmatic entry (tests), a pre-set ``intent`` short-circuits the
+LLM and routes straight to its category. The OpenAI client + message helpers + the
+step-progress counter here are also reused by the category agent.
 """
 from __future__ import annotations
 
 import json
 import os
+import re as _re
 import sys
+import uuid
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.types import interrupt
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 load_dotenv()
 
-import re as _re
-
-from agents.intents import (
-    INTENT_LABELS,
-    INTENT_PLANS,
-    INTENT_SUCCESS_MESSAGES,
-    INTENTS,
-)
+from agents.categories import INTENT_TO_CATEGORY, category_node_name
+from agents.intents import INTENT_LABELS, INTENT_PLANS
 from agents.prompts import AGENT_SYSTEM_PROMPT
-from agents.state import AgentState
-from db.repository import Repository
+from agents.state import OrchestratorState
 
 
 # ---------- confirmation detection helpers ----------
@@ -52,8 +43,6 @@ _REJECT_RE = _re.compile(
 
 
 def _is_confirmation(text: str) -> bool:
-    # A question (e.g. "ok but what's the 20% thing?") is a follow-up, not a yes —
-    # don't let an embedded "ok"/"sure" prematurely start the workflow.
     if "?" in text:
         return False
     return bool(_CONFIRM_RE.search(text)) and not bool(_REJECT_RE.search(text))
@@ -63,7 +52,7 @@ def _is_rejection(text: str) -> bool:
     return bool(_REJECT_RE.search(text))
 
 
-# ---------- start_workflow tool definition (OpenAI function schema) ----------
+# ---------- LLM tool definitions (OpenAI function schema) ----------
 
 START_WORKFLOW_TOOL: dict = {
     "type": "function",
@@ -81,10 +70,8 @@ START_WORKFLOW_TOOL: dict = {
             "properties": {
                 "intent_id": {
                     "type": "string",
-                    "description": (
-                        "The registered intent id. Must be exactly one of: "
-                        + ", ".join(INTENT_PLANS.keys())
-                    ),
+                    "description": "The registered intent id. Must be exactly one of: "
+                    + ", ".join(INTENT_PLANS.keys()),
                 },
                 "brief_reason": {
                     "type": "string",
@@ -114,15 +101,10 @@ PROPOSE_WORKFLOW_TOOL: dict = {
             "properties": {
                 "intent_id": {
                     "type": "string",
-                    "description": (
-                        "The registered intent id. Must be exactly one of: "
-                        + ", ".join(INTENT_PLANS.keys())
-                    ),
+                    "description": "The registered intent id. Must be exactly one of: "
+                    + ", ".join(INTENT_PLANS.keys()),
                 },
-                "answer": {
-                    "type": "string",
-                    "description": "1–3 sentence answer to the user's question.",
-                },
+                "answer": {"type": "string", "description": "1–3 sentence answer to the user's question."},
                 "proposal": {
                     "type": "string",
                     "description": (
@@ -155,10 +137,9 @@ def _get_openai_client():
     return _openai_client_singleton
 
 
-# ---------- helpers ----------
+# ---------- message helpers ----------
 
 def _last_user_text(messages: list) -> str:
-    """Extract the most recent user message's text, regardless of dict/BaseMessage form."""
     for m in reversed(messages or []):
         if isinstance(m, HumanMessage):
             return m.content if isinstance(m.content, str) else str(m.content)
@@ -190,184 +171,20 @@ def _to_openai_dicts(messages: list) -> list[dict]:
     return out
 
 
-def _announcement(intent: str, routed_via: str, confidence: float | None, *, reason: str = "") -> str:
-    """Return the assistant's intro message for a workflow start."""
+def _announcement(intent: str, *, reason: str = "") -> str:
     if reason:
         return reason
     label = INTENT_LABELS.get(intent, intent)
-    return f"Sure — I'd be glad to help. Let's get started with {label.lower()}."
+    return f"Sure, I'd be glad to help. Let's get started with {label.lower()}."
 
 
-# ---------- agent_node ----------
+# ---------- step-progress counter (reused by the category agent) ----------
 
-def agent_node(state: AgentState) -> dict[str, Any]:
-    """Conversational LLM agent.
-
-    Outcomes:
-    - proposed_intent + confirmation → set intent, route to plan_steps
-    - LLM start_workflow tool call   → set intent, route to plan_steps
-    - LLM propose_workflow tool call → set proposed_intent, route to END
-    - LLM plain text reply           → append to messages + final_message, route to END
-    """
-    msgs = state.get("messages", []) or []
-    last_user = _last_user_text(msgs)
-
-    # ----- Step 0: proposed-intent pending — check if user is confirming or rejecting -----
-    proposed = state.get("proposed_intent")
-    if proposed:
-        if _is_confirmation(last_user):
-            label = INTENT_LABELS.get(proposed, proposed)
-            return {
-                "intent": proposed,
-                "proposed_intent": None,
-                "intent_confidence": 1.0,
-                "routed_via": "confirmed",
-                "routing_announcement": f"Great — I'd be happy to help. Starting {label.lower()} now.",
-            }
-        elif _is_rejection(last_user):
-            msg = AIMessage(content="No problem! Let me know if there's anything else I can help with.")
-            return {"messages": [msg], "final_message": msg.content, "proposed_intent": None}
-        # User pivoted to something new — clear the proposal and re-classify normally.
-
-    # ----- LLM classification -----
-    if not os.environ.get("AZURE_OPENAI_API_KEY"):
-        msg = AIMessage(content=(
-            "I can help with retirement-account tasks like checking balance, changing "
-            "address, or adding a beneficiary. What would you like to do?"
-        ))
-        return {"messages": [msg], "final_message": msg.content}
-
-    api_messages = [{"role": "system", "content": AGENT_SYSTEM_PROMPT}] + _to_openai_dicts(msgs)
-
-    try:
-        completion = _get_openai_client().chat.completions.create(
-            model=os.environ["AZURE_MODEL_DEPLOYMENT"],
-            messages=api_messages,
-            tools=[START_WORKFLOW_TOOL, PROPOSE_WORKFLOW_TOOL],
-            tool_choice="auto",
-            temperature=0.3,
-        )
-    except Exception as e:
-        print(f"[agent_node] LLM call failed: {type(e).__name__}: {e}", file=sys.stderr)
-        msg = AIMessage(content="Sorry, I'm having trouble connecting right now. Please try again.")
-        return {
-            "messages": [msg],
-            "final_message": msg.content,
-            "last_error": f"{type(e).__name__}: {e}",
-        }
-
-    choice = completion.choices[0]
-    raw_msg = choice.message
-
-    # ----- Tool call branch -----
-    if choice.finish_reason == "tool_calls" and raw_msg.tool_calls:
-        call = raw_msg.tool_calls[0]
-        try:
-            args = json.loads(call.function.arguments)
-        except (json.JSONDecodeError, AttributeError):
-            args = {}
-        tool_call_id = call.id
-
-        tool_calls_meta = [
-            {"id": call.id, "type": "function",
-             "function": {"name": call.function.name, "arguments": call.function.arguments}}
-        ]
-
-        # ----- propose_workflow branch -----
-        if call.function.name == "propose_workflow":
-            intent_id = args.get("intent_id", "")
-            answer = args.get("answer", "")
-            proposal = args.get("proposal", "")
-            combined = f"{answer}\n\n{proposal}"
-            ai_msg = AIMessage(
-                content=combined,
-                additional_kwargs={"tool_calls": tool_calls_meta},
-            )
-            if intent_id not in INTENT_PLANS:
-                tool_err = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
-                return {"messages": [ai_msg, tool_err], "final_message": combined, "proposed_intent": None}
-            tool_msg = ToolMessage(content=f"workflow_proposed:{intent_id}", tool_call_id=tool_call_id)
-            return {
-                "messages": [ai_msg, tool_msg],
-                "final_message": combined,
-                "proposed_intent": intent_id,
-            }
-
-        # ----- start_workflow branch -----
-        intent_id = args.get("intent_id", "")
-        reason = args.get("brief_reason", "") or ""
-
-        # Store the assistant turn with its tool_calls metadata for future context.
-        ai_msg = AIMessage(
-            content=raw_msg.content or "",
-            additional_kwargs={"tool_calls": tool_calls_meta},
-        )
-
-        if intent_id not in INTENT_PLANS:
-            tool_err = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
-            apology = AIMessage(content=(
-                "Hmm, I'm not sure how to do that. Could you tell me a bit more about what you'd like to update?"
-            ))
-            return {
-                "messages": [ai_msg, tool_err, apology],
-                "final_message": apology.content,
-                "proposed_intent": None,
-            }
-
-        tool_msg = ToolMessage(content=f"workflow_started:{intent_id}", tool_call_id=tool_call_id)
-        return {
-            "messages": [ai_msg, tool_msg],
-            "intent": intent_id,
-            "proposed_intent": None,
-            "intent_confidence": None,
-            "routed_via": "agent",
-            "routing_announcement": _announcement(intent_id, "agent", None, reason=reason),
-        }
-
-    # ----- Plain text reply branch -----
-    ai_msg = AIMessage(content=raw_msg.content or "")
-    return {
-        "messages": [ai_msg],
-        "final_message": ai_msg.content,
-        "proposed_intent": None,
-    }
-
-
-# ---------- plan_steps ----------
-
-def plan_steps(state: AgentState) -> dict[str, Any]:
-    intent = state.get("intent")
-    if not intent or intent not in INTENT_PLANS:
-        # Should never happen — agent_node only routes here when intent is set + valid.
-        return {"plan_complete": True}
-    return {
-        "intent": intent,
-        "current_step_idx": 0,
-        "collected_data": {},
-        "last_error": None,
-        "plan_complete": False,
-    }
-
-
-def _current_plan(state: AgentState):
-    intent = state.get("intent")
-    if not intent or intent not in INTENT_PLANS:
-        return []
-    return INTENT_PLANS[intent]
-
-
-# Step kinds that render an interactive card the user must act on.
 _INPUT_KINDS = {"verify", "collect", "confirm"}
 
 
-def step_progress(plan: list[dict], state: AgentState, idx: int) -> tuple[int, int] | None:
-    """(position, total) over the input-bearing, non-skipped steps of the active plan.
-
-    Counts only steps that render an interactive card (verify/collect/confirm),
-    honoring the same skips render_step applies: already-verified verify steps and
-    any step whose skip_if(state) fires. Returns None when the current step isn't an
-    input step or the flow has fewer than 2 input steps (nothing worth numbering).
-    """
+def step_progress(plan: list[dict], state: dict, idx: int) -> tuple[int, int] | None:
+    """(position, total) over the input-bearing, non-skipped steps of the active plan."""
     verified = state.get("verified")
 
     def visible(step: dict) -> bool:
@@ -384,173 +201,178 @@ def step_progress(plan: list[dict], state: AgentState, idx: int) -> tuple[int, i
     return visible_idxs.index(idx) + 1, len(visible_idxs)
 
 
-# ---------- workflow loop nodes (unchanged) ----------
+# ---------- supervisor task helpers ----------
 
-def render_step(state: AgentState, repo: Repository) -> dict[str, Any]:
-    """Build the card for the current step and stash it in state.
+def _open_task(intent: str, *, via: str, announce: str | None) -> dict[str, Any]:
+    """Return state updates that open a task and route to its category agent."""
+    cat = INTENT_TO_CATEGORY[intent]
+    entry = {"task_id": uuid.uuid4().hex[:12], "intent": intent,
+             "label": INTENT_LABELS.get(intent, intent), "status": "active"}
+    return {
+        "intent": None,
+        "active_category": cat,
+        "active_intent": intent,
+        "route_to": category_node_name(cat),
+        "task_ledger": [entry],
+        "routing_announcement": announce,
+        "routed_via": via,
+        "proposed_intent": None,
+        "last_handback": None,
+    }
 
-    Skips steps that are already verified (when requires_verified=False but step is a verify-step
-    and state.verified is True).
-    """
-    plan = _current_plan(state)
-    idx = state.get("current_step_idx", 0)
-    if idx >= len(plan):
-        return {"plan_complete": True, "pending_card": None}
-    step = plan[idx]
 
-    # If we've already verified earlier in this session, skip verify steps
-    if step["kind"] == "verify" and state.get("verified"):
-        return {"current_step_idx": idx + 1, "pending_card": None}
+def _consume_handback(state: OrchestratorState, hb: dict) -> dict[str, Any]:
+    """A subagent returned control. Update the ledger and decide what's next."""
+    kind = hb.get("kind")
+    ledger = state.get("task_ledger") or []
+    active = next((e for e in ledger if e.get("status") == "active"), None)
+    updates: dict[str, Any] = {
+        "last_handback": None, "route_to": None,
+        "active_category": None, "active_intent": None,
+    }
 
-    # Conditional skip — any step can declare a skip_if(state) predicate.
-    skip_if = step.get("skip_if")
-    if skip_if and skip_if(state):
-        return {"current_step_idx": idx + 1, "pending_card": None}
-
-    # Inform-only steps with a card factory: render and end (no interrupt below).
-    if step["kind"] == "inform":
-        card = step["card_factory"](state, repo) if step["card_factory"] else None
-        return {
-            "pending_card": card,
-            "final_message": INTENT_SUCCESS_MESSAGES.get(state.get("intent", ""), ""),
-            "final_card": card,
+    if kind == "pivot":
+        new_intent = hb.get("new_intent")
+        parked = {
+            **(active or {}), "status": "parked",
+            "resume_step_idx": hb.get("resume_step_idx", 0),
+            "collected_data": hb.get("collected_data", {}),
+            "label": hb.get("label") or (active or {}).get("label", ""),
         }
+        opened = _open_task(new_intent, via="pivot", announce=(
+            f"Sure, let's switch to {INTENT_LABELS.get(new_intent, new_intent).lower()}. "
+            f"We can come back to {parked['label'].lower()} after."
+        ))
+        # ledger: upsert the parked entry + append the new active entry
+        updates.update(opened)
+        updates["task_ledger"] = [parked] + opened["task_ledger"]
+        updates["parked_task"] = parked
+        return updates
 
-    # Collect/confirm/verify steps: build card, will be interrupted in await_input.
-    factory = step["card_factory"]
-    card = factory(state, repo) if factory else None
-    if card is None:
-        # Persist step has no card; route to persist.
-        return {"pending_card": None}
+    if kind == "cancelled":
+        if active:
+            updates["task_ledger"] = [{**active, "status": "cancelled"}]
+        return updates
 
-    card_updates: dict[str, Any] = {}
-    if state.get("last_error"):
-        card_updates["error"] = state["last_error"]
-    prog = step_progress(plan, state, idx)
-    if prog:
-        card_updates["current_step"], card_updates["total_steps"] = prog
-    if card_updates:
+    # completed
+    if active:
+        updates["task_ledger"] = [{**active, "status": "completed",
+                                   "request_id": hb.get("request_id"),
+                                   "summary": hb.get("label")}]
+    parked = state.get("parked_task")
+    if parked:
+        updates["routing_announcement"] = (
+            f"You still have {parked.get('label', 'a task').lower()} in progress. "
+            "Want to pick it back up?"
+        )
+    return updates
+
+
+# ---------- supervisor node ----------
+
+def supervisor_node(state: OrchestratorState) -> dict[str, Any]:
+    """Classify + route + track. See module docstring."""
+    # ----- CASE A: a subagent handed control back -----
+    hb = state.get("last_handback")
+    if hb:
+        return _consume_handback(state, hb)
+
+    # ----- CASE B: pre-set intent fast-path (tests / programmatic entry) -----
+    preset = state.get("intent")
+    if preset and preset in INTENT_PLANS and not state.get("active_category"):
+        return _open_task(preset, via="preset", announce=None)
+
+    msgs = state.get("messages", []) or []
+    last_user = _last_user_text(msgs)
+
+    # ----- CASE C: a proposal is pending — confirm or reject -----
+    proposed = state.get("proposed_intent")
+    if proposed:
+        if _is_confirmation(last_user):
+            label = INTENT_LABELS.get(proposed, proposed)
+            return _open_task(proposed, via="confirmed",
+                              announce=f"Great, happy to help. Starting {label.lower()} now.")
+        if _is_rejection(last_user):
+            msg = AIMessage(content="No problem! Let me know if there's anything else I can help with.")
+            return {"messages": [msg], "final_message": msg.content,
+                    "proposed_intent": None, "route_to": None}
+        # otherwise: user pivoted — clear the proposal and re-classify below
+
+    # ----- CASE D: LLM classification -----
+    if not os.environ.get("AZURE_OPENAI_API_KEY"):
+        msg = AIMessage(content=(
+            "I can help with retirement-account tasks like checking balance, changing "
+            "address, or adding a beneficiary. What would you like to do?"
+        ))
+        return {"messages": [msg], "final_message": msg.content, "route_to": None}
+
+    api_messages = [{"role": "system", "content": AGENT_SYSTEM_PROMPT}] + _to_openai_dicts(msgs)
+    try:
+        completion = _get_openai_client().chat.completions.create(
+            model=os.environ["AZURE_MODEL_DEPLOYMENT"],
+            messages=api_messages,
+            tools=[START_WORKFLOW_TOOL, PROPOSE_WORKFLOW_TOOL],
+            tool_choice="auto",
+            temperature=0.3,
+        )
+    except Exception as e:
+        print(f"[supervisor] LLM call failed: {type(e).__name__}: {e}", file=sys.stderr)
+        msg = AIMessage(content="Sorry, I'm having trouble connecting right now. Please try again.")
+        return {"messages": [msg], "final_message": msg.content,
+                "last_error": f"{type(e).__name__}: {e}", "route_to": None}
+
+    choice = completion.choices[0]
+    raw_msg = choice.message
+
+    if choice.finish_reason == "tool_calls" and raw_msg.tool_calls:
+        call = raw_msg.tool_calls[0]
         try:
-            card = card.model_copy(update=card_updates)
-        except Exception:
-            pass
+            args = json.loads(call.function.arguments)
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            args = {}
+        tool_call_id = call.id
+        tool_calls_meta = [{
+            "id": call.id, "type": "function",
+            "function": {"name": call.function.name, "arguments": call.function.arguments},
+        }]
 
-    return {"pending_card": card, "last_error": None}
+        # ----- propose_workflow -----
+        if call.function.name == "propose_workflow":
+            intent_id = args.get("intent_id", "")
+            combined = f"{args.get('answer', '')}\n\n{args.get('proposal', '')}"
+            ai_msg = AIMessage(content=combined, additional_kwargs={"tool_calls": tool_calls_meta})
+            if intent_id not in INTENT_PLANS:
+                tool_err = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
+                return {"messages": [ai_msg, tool_err], "final_message": combined,
+                        "proposed_intent": None, "route_to": None}
+            tool_msg = ToolMessage(content=f"workflow_proposed:{intent_id}", tool_call_id=tool_call_id)
+            return {"messages": [ai_msg, tool_msg], "final_message": combined,
+                    "proposed_intent": intent_id, "route_to": None}
 
+        # ----- start_workflow -----
+        intent_id = args.get("intent_id", "")
+        reason = args.get("brief_reason", "") or ""
+        ai_msg = AIMessage(content=raw_msg.content or "", additional_kwargs={"tool_calls": tool_calls_meta})
+        if intent_id not in INTENT_PLANS:
+            tool_err = ToolMessage(content="error: unknown intent_id", tool_call_id=tool_call_id)
+            apology = AIMessage(content=(
+                "Hmm, I'm not sure how to do that. Could you tell me a bit more about what you'd like to update?"
+            ))
+            return {"messages": [ai_msg, tool_err, apology], "final_message": apology.content,
+                    "proposed_intent": None, "route_to": None}
+        tool_msg = ToolMessage(content=f"workflow_started:{intent_id}", tool_call_id=tool_call_id)
+        opened = _open_task(intent_id, via="agent", announce=_announcement(intent_id, reason=reason))
+        opened["messages"] = [ai_msg, tool_msg]
+        opened["intent_confidence"] = None
+        return opened
 
-def await_input(state: AgentState) -> dict[str, Any]:
-    """Pause the graph until app.py supplies a Command(resume=...)."""
-    payload = state.get("pending_card")
-    if payload is None:
-        return {"last_submission": {}}
-    payload_dump = payload.model_dump() if hasattr(payload, "model_dump") else payload
-    submission = interrupt(payload_dump)
-    return {"last_submission": submission}
-
-
-def validate_step(state: AgentState, repo: Repository) -> dict[str, Any]:
-    """Run the current step's validator. On failure, set last_error so render_step re-renders the same card.
-    On success, run the collector and advance current_step_idx."""
-    plan = _current_plan(state)
-    idx = state.get("current_step_idx", 0)
-    step = plan[idx]
-    submission = state.get("last_submission") or {}
-
-    if submission.get("_cancelled"):
-        return {
-            "intent": None,
-            "current_step_idx": 0,
-            "plan_complete": True,
-            "pending_card": None,
-            "final_message": "Got it — I've cancelled that. What would you like to do instead?",
-            "final_card": None,
-            "last_error": None,
-        }
-
-    validator = step.get("validator")
-    if validator:
-        err = validator(submission, state, repo)
-        if err:
-            return {"last_error": err, "last_submission": None}
-
-    updates: dict[str, Any] = {}
-    if step["kind"] == "verify" and step["name"] == "otp":
-        updates["verified"] = True
-
-    collector = step.get("collector")
-    if collector:
-        new_data = collector(submission, state)
-        merged = dict(state.get("collected_data") or {})
-        merged.update(new_data)
-        updates["collected_data"] = merged
-
-    updates["current_step_idx"] = idx + 1
-    updates["pending_card"] = None
-    updates["last_error"] = None
-    updates["last_submission"] = None
-    return updates
+    # ----- plain text reply -----
+    ai_msg = AIMessage(content=raw_msg.content or "")
+    return {"messages": [ai_msg], "final_message": ai_msg.content,
+            "proposed_intent": None, "route_to": None}
 
 
-def persist_step(state: AgentState, repo: Repository) -> dict[str, Any]:
-    """Run the current step's persister, advance idx."""
-    plan = _current_plan(state)
-    idx = state.get("current_step_idx", 0)
-    step = plan[idx]
-    persister = step.get("persister")
-    updates: dict[str, Any] = {"current_step_idx": idx + 1}
-    if persister:
-        result = persister(state, repo)
-        merged = dict(state.get("collected_data") or {})
-        merged.update(result)
-        updates["collected_data"] = merged
-    return updates
+# ---------- routing edge ----------
 
-
-# ---------- routing edges ----------
-
-def route_from_start(state: AgentState) -> str:
-    """If the caller pre-set an intent (e.g. in tests), skip agent_node entirely."""
-    return "plan_steps" if state.get("intent") else "agent_node"
-
-
-def route_after_agent(state: AgentState) -> str:
-    return "plan_steps" if state.get("intent") else "end"
-
-
-def route_after_render(state: AgentState) -> str:
-    plan = _current_plan(state)
-    idx = state.get("current_step_idx", 0)
-    if idx >= len(plan) or state.get("plan_complete"):
-        return "end"
-    step = plan[idx]
-    # Conditional skip — loop back to render_step to advance past this step.
-    skip_if = step.get("skip_if")
-    if skip_if and skip_if(state):
-        return "render_step"
-    if step["kind"] == "inform":
-        return "end"
-    if step["kind"] == "persist":
-        return "persist_step"
-    if state.get("pending_card") is None:
-        return "render_step"
-    return "await_input"
-
-
-def route_after_validate(state: AgentState) -> str:
-    if state.get("last_error"):
-        return "render_step"
-    if state.get("plan_complete"):
-        return "end"
-    plan = _current_plan(state)
-    idx = state.get("current_step_idx", 0)
-    if idx >= len(plan):
-        return "end"
-    return "render_step"
-
-
-def route_after_persist(state: AgentState) -> str:
-    plan = _current_plan(state)
-    idx = state.get("current_step_idx", 0)
-    if idx >= len(plan):
-        return "end"
-    return "render_step"
+def route_from_supervisor(state: OrchestratorState) -> str:
+    return state.get("route_to") or "end"

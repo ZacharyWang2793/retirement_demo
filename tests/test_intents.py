@@ -50,11 +50,42 @@ def _new_thread_id() -> str:
     return str(uuid.uuid4())
 
 
+def _view(graph, config):
+    """Snapshot that surfaces a pending card even when the interrupt is suspended
+    inside a category subagent subgraph, and aliases the live intent under the legacy
+    `intent` key so existing assertions keep working."""
+    from types import SimpleNamespace
+
+    snap = graph.get_state(config, subgraphs=True)
+    values = dict(snap.values or {})
+    pending = None
+    child_intent = None
+    stack = list(snap.tasks or [])
+    while stack:
+        t = stack.pop()
+        cs = getattr(t, "state", None)
+        cv = getattr(cs, "values", None) if cs is not None else None
+        if cv is not None:
+            if cv.get("pending_card") is not None:
+                pending = cv["pending_card"]
+            if cv.get("active_intent"):
+                child_intent = cv["active_intent"]
+            stack.extend(getattr(cs, "tasks", []) or [])
+        if getattr(t, "interrupts", None) and pending is None:
+            pending = t.interrupts[0].value
+    if pending is not None:
+        values["pending_card"] = pending
+    active = values.get("active_intent") or child_intent
+    if active and not values.get("intent"):
+        values["intent"] = active
+    return SimpleNamespace(values=values, next=snap.next)
+
+
 def _run_until_pause_or_end(graph, payload_or_command, config):
-    """Stream events; return the last (i.e. current) state snapshot."""
-    for _ in graph.stream(payload_or_command, config, stream_mode="values"):
+    """Stream events (descending into subgraphs); return the current state view."""
+    for _ in graph.stream(payload_or_command, config, stream_mode="values", subgraphs=True):
         pass
-    return graph.get_state(config)
+    return _view(graph, config)
 
 
 def _is_paused(snap) -> bool:
@@ -84,7 +115,8 @@ def test_check_balance_read_only():
         config,
     )
 
-    assert snap.values.get("intent") == "check_balance"
+    # The task completes and the supervisor clears active_intent; the ledger records it.
+    assert any(e["intent"] == "check_balance" for e in snap.values.get("task_ledger", []))
     final_card = snap.values.get("final_card")
     assert final_card is not None
     assert final_card.card_type == "balance_view"
@@ -314,7 +346,7 @@ def test_back_to_back_flows_same_thread():
         },
         config,
     )
-    assert snap.values.get("intent") == "check_balance"
+    assert any(e["intent"] == "check_balance" for e in snap.values.get("task_ledger", []))
     assert snap.values.get("final_card") is not None
     assert snap.values["final_card"].card_type == "balance_view"
 
@@ -534,6 +566,6 @@ def test_cancel_during_address_change():
     # User clicks Cancel
     snap = _run_until_pause_or_end(g, Command(resume={"_cancelled": True}), config)
     assert not _is_paused(snap)
-    assert snap.values.get("plan_complete") is True
-    assert snap.values.get("intent") is None
+    assert any(e.get("status") == "cancelled" for e in snap.values.get("task_ledger", []))
+    assert snap.values.get("active_intent") is None
     assert snap.values.get("final_message", "").lower().startswith("got it")

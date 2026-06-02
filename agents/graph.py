@@ -1,6 +1,14 @@
-"""Build the LangGraph state graph.
+"""Build the supervisor + per-category-subagent state graph.
 
-build_graph(repo, *, checkpoint_db_path) → CompiledGraph
+    build_graph(repo, *, checkpoint_db_path) → CompiledGraph
+
+Topology:
+    START → supervisor ─(route_to)→ cat_<category>  (one subgraph per category)
+                       └─(no route)→ END
+    cat_<category> ──(returns)──→ supervisor   (consumes the hand-back, loops or ends)
+
+The supervisor classifies + routes + tracks the ledger; each category subgraph owns
+its domain's workflows. The single SqliteSaver is shared with the nested subgraphs.
 """
 from __future__ import annotations
 
@@ -13,20 +21,10 @@ from typing import Any
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
-from agents.nodes import (
-    agent_node,
-    await_input,
-    persist_step,
-    plan_steps,
-    render_step,
-    route_after_agent,
-    route_after_persist,
-    route_after_render,
-    route_after_validate,
-    route_from_start,
-    validate_step,
-)
-from agents.state import AgentState
+from agents.categories import CATEGORY_SPECS, category_node_name
+from agents.category_agent import build_category_agent
+from agents.nodes import route_from_supervisor, supervisor_node
+from agents.state import OrchestratorState
 from db.repository import Repository
 
 
@@ -36,42 +34,19 @@ def build_graph(repo: Repository, *, checkpoint_db_path: str | None = None) -> A
     conn = sqlite3.connect(cp_path, check_same_thread=False)
     saver = SqliteSaver(conn)
 
-    g = StateGraph(AgentState)
+    g = StateGraph(OrchestratorState)
+    g.add_node("supervisor", supervisor_node)
 
-    g.add_node("agent_node", agent_node)
-    g.add_node("plan_steps", plan_steps)
-    g.add_node("render_step", partial(render_step, repo=repo))
-    g.add_node("await_input", await_input)
-    g.add_node("validate_step", partial(validate_step, repo=repo))
-    g.add_node("persist_step", partial(persist_step, repo=repo))
+    # One category subagent subgraph per spec. Compiled without a checkpointer so each
+    # inherits the parent's saver when nested.
+    route_map: dict[str, str] = {}
+    for cat_id, spec in CATEGORY_SPECS.items():
+        node = category_node_name(cat_id)
+        g.add_node(node, build_category_agent(spec, repo))
+        g.add_edge(node, "supervisor")            # subagent returns control to the supervisor
+        route_map[node] = node
 
-    g.add_conditional_edges(START, route_from_start, {"agent_node": "agent_node", "plan_steps": "plan_steps"})
-    g.add_conditional_edges(
-        "agent_node",
-        route_after_agent,
-        {"plan_steps": "plan_steps", "end": END},
-    )
-    g.add_edge("plan_steps", "render_step")
-    g.add_conditional_edges(
-        "render_step",
-        route_after_render,
-        {
-            "await_input": "await_input",
-            "render_step": "render_step",
-            "persist_step": "persist_step",
-            "end": END,
-        },
-    )
-    g.add_edge("await_input", "validate_step")
-    g.add_conditional_edges(
-        "validate_step",
-        route_after_validate,
-        {"render_step": "render_step", "end": END},
-    )
-    g.add_conditional_edges(
-        "persist_step",
-        route_after_persist,
-        {"render_step": "render_step", "end": END},
-    )
+    g.add_edge(START, "supervisor")
+    g.add_conditional_edges("supervisor", route_from_supervisor, {**route_map, "end": END})
 
     return g.compile(checkpointer=saver)

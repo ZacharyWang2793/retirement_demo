@@ -363,18 +363,28 @@ def _absorb_run(payload: Any, *, spinner_label: str = "Working...") -> None:
     """
     seen_announcement = None
     seen_final_message = None
+    seen_say = None
+    # subgraphs=True so we also see announcements/answers emitted inside a category
+    # subagent. With it, each event is a (namespace, state) tuple — normalize below.
     with st.spinner(spinner_label, show_time=True):
-        for ev in graph.stream(payload, config, stream_mode="values"):
-            ann = ev.get("routing_announcement")
+        for ev in graph.stream(payload, config, stream_mode="values", subgraphs=True):
+            state = ev[1] if isinstance(ev, tuple) else ev
+            if not isinstance(state, dict):
+                continue
+            ann = state.get("routing_announcement")
             if ann and ann != seen_announcement:
                 st.session_state.history.append({"role": "assistant", "content": ann})
                 seen_announcement = ann
-            msg = ev.get("final_message")
+            say = state.get("assistant_say")
+            if say and say != seen_say:
+                st.session_state.history.append({"role": "assistant", "content": say})
+                seen_say = say
+            msg = state.get("final_message")
             if msg and msg != seen_final_message:
                 st.session_state.history.append({"role": "assistant", "content": msg})
                 seen_final_message = msg
-            if "proposed_intent" in ev:
-                st.session_state.proposed_intent = ev["proposed_intent"]
+            if "proposed_intent" in state:
+                st.session_state.proposed_intent = state["proposed_intent"]
 
 
 def _archive_card_summary(card, submission: dict[str, Any]) -> None:
@@ -516,17 +526,48 @@ def _clear_terminal_state() -> None:
         config,
         {
             "intent": None,
-            "current_step_idx": 0,
-            "plan_complete": False,
+            "active_category": None,
+            "active_intent": None,
+            "route_to": None,
+            "last_handback": None,
             "pending_card": None,
             "final_card": None,
             "final_message": None,
+            "assistant_say": None,
             "last_error": None,
-            "last_submission": None,
-            "collected_data": {},
         },
     )
     _bust_sidebar_cache()  # balance may have changed if a transaction was persisted
+
+
+def _read_graph_state():
+    """Read the current snapshot, surfacing the pending card even when the interrupt
+    is suspended INSIDE a category subagent subgraph.
+
+    While a subagent is paused, its (shared) pending_card is not yet committed to the
+    parent state — so we walk snap.tasks to the deepest pending task and read its
+    card there. Once a subagent completes, final_card surfaces at the parent normally.
+    Returns (snap, parent_values, pending_card, step_idx, is_paused).
+    """
+    snap = graph.get_state(config, subgraphs=True)
+    values = snap.values or {}
+    pending = None
+    step_idx = 0
+    stack = list(snap.tasks or [])
+    while stack:
+        t = stack.pop()
+        cs = getattr(t, "state", None)
+        cv = getattr(cs, "values", None) if cs is not None else None
+        if cv is not None:
+            if cv.get("pending_card") is not None:
+                pending = cv["pending_card"]
+                step_idx = cv.get("current_step_idx", 0)
+            stack.extend(getattr(cs, "tasks", []) or [])
+        if getattr(t, "interrupts", None) and pending is None:
+            pending = t.interrupts[0].value
+    if pending is None:
+        pending = values.get("pending_card")
+    return snap, values, pending, step_idx, bool(snap.next) and pending is not None
 
 
 def _run_pending_turn(pt: dict[str, Any]) -> None:
@@ -555,65 +596,24 @@ def _run_pending_turn(pt: dict[str, Any]) -> None:
             )
 
     if is_paused:
-        # Cancel the in-flight flow first; cancel signal lands cleanly via the validator.
-        for _ in graph.stream(Command(resume={"_cancelled": True}), config, stream_mode="values"):
-            pass
-        # Drop the cancel breadcrumb the validator adds — the user is mid-redirect, not done.
-        if st.session_state.history and st.session_state.history[-1].get("role") == "system":
-            st.session_state.history.pop()
-
-    payload = {
-        "customer_id": st.session_state.customer_id,
-        "thread_id": st.session_state.thread_id,
-        "messages": [{"role": "user", "content": user_text}],
-        "verified": True,  # user is already authenticated; skip identity/OTP steps
-        "collected_data": {},
-        "current_step_idx": 0,
-        "plan_complete": False,
-        "pending_card": None,
-        "final_card": None,
-        "final_message": None,
-        "last_error": None,
-        "last_submission": None,
-    }
-    _absorb_run(payload, spinner_label="Thinking...")
+        # A subagent card is on screen and the member typed instead of submitting it.
+        # Route the text INTO the active subagent so its brain can answer an in-domain
+        # question, switch tasks, or cancel — rather than dropping the whole flow.
+        _absorb_run(Command(resume={"_user_text": user_text}), spinner_label="Thinking...")
+    else:
+        payload = {
+            "customer_id": st.session_state.customer_id,
+            "thread_id": st.session_state.thread_id,
+            "messages": [{"role": "user", "content": user_text}],
+            "verified": True,  # user is already authenticated; skip identity/OTP steps
+        }
+        _absorb_run(payload, spinner_label="Thinking...")
     typing_ph.empty()
 
     # Flag that a title is needed — generated on the *next* rerun so it never
     # blocks the first response from appearing.
     if st.session_state.get("conv_title") is None:
         st.session_state._pending_title = True
-
-
-def _start_turn(user_text: str, is_paused: bool, values: dict[str, Any]) -> None:
-    """Push a user message into the thread and run the graph from a fresh turn."""
-    # Belt-and-suspenders: if a terminal card is still in graph state (e.g., the
-    # auto-store rerun hasn't fired yet), persist it now so it isn't lost.
-    if values.get("final_card") is not None:
-        _store_card_in_history(values["final_card"])
-    st.session_state.history.append({"role": "user", "content": user_text})
-    if is_paused:
-        # Cancel the in-flight flow first; cancel signal lands cleanly via the validator.
-        for _ in graph.stream(Command(resume={"_cancelled": True}), config, stream_mode="values"):
-            pass
-        # Drop the cancel breadcrumb the validator adds — the user is mid-redirect, not done.
-        if st.session_state.history and st.session_state.history[-1].get("role") == "system":
-            st.session_state.history.pop()
-    payload = {
-        "customer_id": st.session_state.customer_id,
-        "thread_id": st.session_state.thread_id,
-        "messages": [{"role": "user", "content": user_text}],
-        "verified": True,  # user is already authenticated; skip identity/OTP steps
-        "collected_data": {},
-        "current_step_idx": 0,
-        "plan_complete": False,
-        "pending_card": None,
-        "final_card": None,
-        "final_message": None,
-        "last_error": None,
-        "last_submission": None,
-    }
-    _absorb_run(payload, spinner_label="Thinking...")
 
 
 # ---------- render history first ----------
@@ -642,14 +642,12 @@ if pt := st.session_state.pop("_pending_turn", None):
 
 # ---------- handle the current state of the graph ----------
 
-snap = graph.get_state(config)
-values = snap.values or {}
-pending_card = values.get("pending_card")
-is_paused = bool(snap.next) and pending_card is not None
+snap, values, pending_card, step_idx, is_paused = _read_graph_state()
 
 if is_paused:
-    # Mid-flow card: form submission resumes the graph.
-    card_key = f"card-{st.session_state.thread_id}-{values.get('current_step_idx', 0)}-{getattr(pending_card, 'card_type', 'x')}"
+    # Mid-flow card (interrupt suspended inside a category subagent): form submission
+    # resumes the graph; typing into the chat box routes the text into the subagent.
+    card_key = f"card-{st.session_state.thread_id}-{values.get('active_intent', '')}-{step_idx}-{getattr(pending_card, 'card_type', 'x')}"
     submitted = render_card(pending_card, key=card_key)
     if submitted is not None:
         _archive_card_summary(pending_card, submitted)
@@ -681,6 +679,40 @@ if _pending_pi and not is_paused:
         if st.button("No thanks", key="pi-no", use_container_width=True):
             st.session_state.history.append({"role": "user", "content": "No thanks"})
             st.session_state._pending_turn = {"user_text": "No thanks", "is_paused": False}
+            st.rerun()
+
+
+# ---------- parked-task resume chips ----------
+# After a cross-category pivot, the orchestrator parks the prior task. Offer to resume it.
+
+_parked = values.get("parked_task")
+if _parked and not is_paused and not _pending_pi:
+    _pk_label = _parked.get("label", "your previous task")
+    _pk_col1, _pk_col2, _ = st.columns([2, 2, 6], gap="small")
+    with _pk_col1:
+        if st.button(f"Resume {_pk_label.lower()}", key="pk-yes", type="primary", use_container_width=True):
+            st.session_state.history.append({"role": "user", "content": f"Let's resume {_pk_label.lower()}"})
+            graph.update_state(config, {"parked_task": None})
+            # Re-open the parked task with its saved progress (resume_payload flows into
+            # the subagent's cat_init, which rehydrates step + collected data).
+            _absorb_run(
+                {
+                    "customer_id": st.session_state.customer_id,
+                    "thread_id": st.session_state.thread_id,
+                    "verified": True,
+                    "intent": _parked.get("intent"),
+                    "resume_payload": {
+                        "current_step_idx": _parked.get("resume_step_idx", 0),
+                        "collected_data": _parked.get("collected_data", {}),
+                    },
+                    "messages": [],
+                },
+                spinner_label="Picking that back up...",
+            )
+            st.rerun()
+    with _pk_col2:
+        if st.button("Not now", key="pk-no", use_container_width=True):
+            graph.update_state(config, {"parked_task": None})
             st.rerun()
 
 

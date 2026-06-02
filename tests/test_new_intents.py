@@ -47,11 +47,41 @@ def _tid() -> str:
     return str(uuid.uuid4())
 
 
+def _view(graph, config):
+    """Snapshot that surfaces a pending card from inside a category subagent subgraph,
+    aliasing the live intent under the legacy `intent` key for assertions."""
+    from types import SimpleNamespace
+
+    snap = graph.get_state(config, subgraphs=True)
+    values = dict(snap.values or {})
+    pending = None
+    child_intent = None
+    stack = list(snap.tasks or [])
+    while stack:
+        t = stack.pop()
+        cs = getattr(t, "state", None)
+        cv = getattr(cs, "values", None) if cs is not None else None
+        if cv is not None:
+            if cv.get("pending_card") is not None:
+                pending = cv["pending_card"]
+            if cv.get("active_intent"):
+                child_intent = cv["active_intent"]
+            stack.extend(getattr(cs, "tasks", []) or [])
+        if getattr(t, "interrupts", None) and pending is None:
+            pending = t.interrupts[0].value
+    if pending is not None:
+        values["pending_card"] = pending
+    active = values.get("active_intent") or child_intent
+    if active and not values.get("intent"):
+        values["intent"] = active
+    return SimpleNamespace(values=values, next=snap.next)
+
+
 def _walk(graph, payload, config):
-    """Stream events until the graph pauses or ends. Returns the latest snapshot."""
-    for _ in graph.stream(payload, config, stream_mode="values"):
+    """Stream events (descending into subgraphs) until pause/end; return the view."""
+    for _ in graph.stream(payload, config, stream_mode="values", subgraphs=True):
         pass
-    return graph.get_state(config)
+    return _view(graph, config)
 
 
 def _is_paused(snap) -> bool:
@@ -86,7 +116,7 @@ def test_check_request_status_shows_pending_seed():
         "messages": [{"role": "user", "content": "what's the status of my requests?"}],
         "verified": False, "collected_data": {},
     }, config)
-    assert snap.values["intent"] == "check_request_status"
+    assert any(e["intent"] == "check_request_status" for e in snap.values.get("task_ledger", []))
     final = snap.values.get("final_card")
     assert final is not None and final.card_type == "request_list"
     # Seeded pending request should appear

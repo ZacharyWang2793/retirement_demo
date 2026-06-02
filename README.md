@@ -36,16 +36,22 @@ Open the browser link Streamlit prints. Pick a demo customer in the sidebar.
 
 ## Architecture
 
-See [the plan file](../.claude/plans/i-want-to-build-encapsulated-aho.md) for the full design.
+A **supervisor + per-category-subagent** design on LangGraph. The supervisor classifies
+intent and routes to one of **six category subagents** (one per retirement-account domain);
+each subagent owns its domain knowledge, drives the workflow's validated steps, answers
+in-domain questions, and hands back to the supervisor on a cross-category pivot. The LLM
+drives the conversation; every mutation still runs through the deterministic, idempotent
+repository. See **[ARCHITECTURE.md](ARCHITECTURE.md)** for diagrams and the full design.
 
 ```
-chat input  →  LangGraph orchestrator  →  card spec  →  Streamlit renders inline
-                       ↑                                        ↓
-                       └──────  Command(resume=form_data)  ─────┘
+chat input → supervisor → cat_<category> subagent → card spec → Streamlit renders inline
+                  ↑               (interrupt)                          ↓
+                  └────── hand back (ledger) ──── Command(resume=submission) ──────┘
 ```
 
-- `app.py` — Streamlit ↔ LangGraph interrupt bridge
-- `agents/` — graph, nodes, intent registry, prompts
+- `app.py` — Streamlit ↔ LangGraph interrupt bridge (subgraph-aware)
+- `agents/` — supervisor (`nodes.py`), category agents (`category_agent.py`), category
+  registry (`categories.py`), graph wiring, intent step plans, prompts, state
 - `ui/` — card models (Pydantic) + per-card Streamlit renderers
 - `db/` — SQLite repository (only place mutating SQL lives)
 - `data/` — schema and seed script
